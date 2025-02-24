@@ -2,7 +2,6 @@ import { networkService } from './networkService';
 import { getApiConfig } from './apiConfig';
 import * as SecureStore from 'expo-secure-store';
 import { EventEmitter } from '../utils/EventEmitter';
-import WebSocket from 'ws';
 
 type MessageHandler = (data: any) => void;
 

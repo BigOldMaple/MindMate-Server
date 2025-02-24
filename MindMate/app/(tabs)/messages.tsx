@@ -3,7 +3,7 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { chatApi, ChatPreview } from '@/server/services/chatApi';
+import { chatApi, ChatPreview } from '@/services/chatApi';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function MessagesScreen() {

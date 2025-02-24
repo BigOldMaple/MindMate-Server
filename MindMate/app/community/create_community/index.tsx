@@ -3,8 +3,8 @@ import { StyleSheet, ScrollView, TextInput, Pressable, Alert, ActivityIndicator 
 import { View, Text } from '@/components/Themed';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { communityApi } from '@/server/services/communityApi';
-import type { CreateCommunityData } from '../../../server/types/community';
+import { communityApi } from '@/services/communityApi';
+import type { CreateCommunityData } from '../../../types/community';
 
 export default function CreateCommunityScreen() {
   const router = useRouter();

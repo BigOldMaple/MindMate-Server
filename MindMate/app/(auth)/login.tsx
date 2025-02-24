@@ -3,7 +3,7 @@ import { StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, Alert
 import { View, Text } from '@/components/Themed';
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { auth, AuthError } from '../../server/services/auth';
+import { auth, AuthError } from '../../services/auth';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {

@@ -4,10 +4,10 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { auth } from '@/server/services/auth';
+import { auth } from '@/services/auth';
 import { Stack, Link } from 'expo-router';
 import React from 'react';
-import { checkInApi } from '@/server/services/checkInApi';
+import { checkInApi } from '@/services/checkInApi';
 
 export default function SettingsScreen() {
   const [isDoNotDisturb, setIsDoNotDisturb] = useState(false);

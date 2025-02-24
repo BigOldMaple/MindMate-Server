@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
-import { AuthUser } from '../server/services/auth';
+import { AuthUser } from '../services/auth';
 
 interface AuthContextType {
   user: AuthUser | null;

@@ -3,7 +3,7 @@ import { StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-nati
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { communityApi, Community } from '@/server/services/communityApi';
+import { communityApi, Community } from '@/services/communityApi';
 
 export default function CommunityDetailsScreen() {
   const { id } = useLocalSearchParams();

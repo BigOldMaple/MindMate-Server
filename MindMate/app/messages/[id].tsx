@@ -3,9 +3,9 @@ import { StyleSheet, TextInput, Pressable, ActivityIndicator, ScrollView, Keyboa
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { chatApi, ChatMessage } from '@/server/services/chatApi';
+import { chatApi, ChatMessage } from '@/services/chatApi';
 import { useAuth } from '@/contexts/AuthContext';
-import { websocketService } from '@/server/services/websocketService';
+import { websocketService } from '@/services/websocketService';
 import { debounce } from 'lodash';
 import React from 'react';
 

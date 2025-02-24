@@ -5,7 +5,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect, useCallback } from 'react';
 import { debounce } from 'lodash';
 import { useRouter } from 'expo-router';
-import { Community, communityApi } from '@/server/services/communityApi';
+import { Community, communityApi } from '@/services/communityApi';
 import React from 'react';
 
 export default function CommunityScreen() {

@@ -3,7 +3,7 @@ import { StyleSheet, ScrollView, Pressable, View as DefaultView, TextInput, Safe
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter, Stack } from 'expo-router';
-import { checkInApi } from '../../../server/services/checkInApi';
+import { checkInApi } from '../../../services/checkInApi';
 
 // Types for our check-in data
 interface MoodData {

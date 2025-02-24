@@ -3,7 +3,7 @@ import { StyleSheet, ScrollView, TextInput, Pressable, Alert, ActivityIndicator,
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect, useCallback } from 'react';
-import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '../../../server/services/buddyPeerApi';
+import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '../../../services/buddyPeerApi';
 import { debounce } from 'lodash';
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';

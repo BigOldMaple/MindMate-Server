@@ -4,7 +4,7 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { profileApi, UserProfile, EmergencyContact } from '../../server/services/profileApi';
+import { profileApi, UserProfile, EmergencyContact } from '../../services/profileApi';
 import React from 'react';
 
 interface EditModalProps {

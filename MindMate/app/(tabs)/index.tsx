@@ -4,9 +4,9 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, router } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
-import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '@/server/services/buddyPeerApi';
+import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '@/services/buddyPeerApi';
 import { useFocusEffect } from '@react-navigation/native';
-import { checkInApi } from '@/server/services/checkInApi';
+import { checkInApi } from '@/services/checkInApi';
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);

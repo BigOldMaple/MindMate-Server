@@ -4,7 +4,7 @@ import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'rea
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { buddyPeerApi } from '@/server/services/buddyPeerApi';
+import { buddyPeerApi } from '@/services/buddyPeerApi';
 
 interface BuddyProfile {
     userId: string;

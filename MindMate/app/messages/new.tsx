@@ -4,8 +4,8 @@ import { StyleSheet, TextInput, Pressable, ActivityIndicator } from 'react-nativ
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
-import { buddyPeerApi } from '@/server/services/buddyPeerApi';
-import { chatApi } from '@/server/services/chatApi';
+import { buddyPeerApi } from '@/services/buddyPeerApi';
+import { chatApi } from '@/services/chatApi';
 import { debounce } from 'lodash';
 
 interface SearchResult {
