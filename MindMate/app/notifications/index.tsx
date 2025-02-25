@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, View as RNView, StatusBar } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { StyleSheet, Pressable, RefreshControl, ActivityIndicator, View as RNView, StatusBar } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useFocusEffect } from '@react-navigation/native';
