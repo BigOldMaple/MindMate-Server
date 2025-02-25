@@ -4,8 +4,9 @@ import { Tabs } from 'expo-router';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { Pressable, StyleSheet, ViewStyle, StyleProp, View } from 'react-native';
 import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
+
 
 // Define the props interface for our HeaderIconButton
 interface HeaderIconButtonProps {
@@ -16,7 +17,6 @@ interface HeaderIconButtonProps {
   style?: StyleProp<ViewStyle>;
 }
 
-// Custom header button component that ensures the entire area is touchable
 function HeaderIconButton({ 
   iconName, 
   onPress, 
@@ -27,22 +27,23 @@ function HeaderIconButton({
   return (
     <Pressable 
       style={({ pressed }) => [
-        styles.iconButton,
+        styles.touchableArea,
         { opacity: pressed ? 0.7 : 1 },
         style
       ]}
       onPress={onPress}
-      hitSlop={{ top: 15, right: 15, bottom: 15, left: 15 }}
     >
-      <FontAwesome 
-        name={iconName} 
-        size={size} 
-        color={color} 
-        style={styles.buttonIcon}
-      />
+      <View style={styles.iconContainer}>
+        <FontAwesome 
+          name={iconName} 
+          size={size} 
+          color={color} 
+        />
+      </View>
     </Pressable>
   );
 }
+
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -130,19 +131,28 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  iconButton: {
-    width: 50,
-    height: 50,
+  touchableArea: {
+    minWidth: 44,
+    minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 25,
   },
-  buttonIcon: {
-    textAlign: 'center',
+  
+  iconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonContainer: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
   },
   headerRightButton: {
     marginRight: 16,
   },
+  
   createButtonContainer: {
     backgroundColor: '#2196F3',
     shadowColor: '#000',
@@ -150,5 +160,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    borderRadius: 22,
   }
 });
