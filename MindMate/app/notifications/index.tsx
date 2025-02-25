@@ -7,21 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { Stack, useRouter } from 'expo-router';
+import { notificationsApi, Notification } from '@/services/notificationsApi';
+import { useMemo } from 'react';
+import { ScrollView, SectionList } from 'react-native';
 
-// Types for notifications
-interface Notification {
-  id: string;
-  type: 'support' | 'wellness' | 'community' | 'alert' | 'buddy';
-  title: string;
-  message: string;
-  time: string | Date;
-  read: boolean;
-  actionable?: boolean;
-  actionRoute?: string;
-  actionParams?: Record<string, string>;
-}
-
-// Mock data - replace with actual API call
+// Mock data for fallback when API isn't available
 const MOCK_NOTIFICATIONS: Notification[] = [
   {
     id: '1',
@@ -149,17 +139,16 @@ export default function NotificationsScreen() {
     setError(null);
     
     try {
-      // Replace with actual API call
-      // const response = await notificationsApi.getNotifications();
-      // setNotifications(response.data);
-      
-      // For now, using mock data with a slight delay to simulate network
-      setTimeout(() => {
-        setNotifications(MOCK_NOTIFICATIONS);
-        setIsLoading(false);
-      }, 1000);
+      // Call the notifications API
+      const data = await notificationsApi.getNotifications();
+      setNotifications(data);
     } catch (err) {
-      setError('Failed to load notifications');
+      console.error('Error fetching notifications:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load notifications');
+      
+      // Fallback to mock data if the API fails
+      setNotifications(MOCK_NOTIFICATIONS);
+    } finally {
       setIsLoading(false);
     }
   }, []);
@@ -174,8 +163,7 @@ export default function NotificationsScreen() {
   // Mark notification as read
   const markAsRead = useCallback(async (id: string) => {
     try {
-      // Replace with actual API call
-      // await notificationsApi.markAsRead(id);
+      await notificationsApi.markAsRead(id);
       
       // Optimistically update the UI
       setNotifications(prev => 
@@ -186,22 +174,20 @@ export default function NotificationsScreen() {
     } catch (err) {
       // If the API call fails, revert the optimistic update
       console.error('Failed to mark notification as read', err);
+      fetchNotifications();
     }
-  }, []);
+  }, [fetchNotifications]);
   
   // Delete notification
   const deleteNotification = useCallback(async (id: string) => {
     try {
-      // Replace with actual API call
-      // await notificationsApi.deleteNotification(id);
+      await notificationsApi.deleteNotification(id);
       
       // Optimistically update the UI
       setNotifications(prev => prev.filter(notif => notif.id !== id));
     } catch (err) {
       // If the API call fails, revert the optimistic update
       console.error('Failed to delete notification', err);
-      
-      // Refresh to get the current state
       fetchNotifications();
     }
   }, [fetchNotifications]);
@@ -236,15 +222,47 @@ export default function NotificationsScreen() {
         styles.notificationItem,
         !item.read && styles.unreadNotification
       ]}
-      onPress={() => {
-        markAsRead(item.id);
-        // Navigate to action route if available
-        if (item.actionable && item.actionRoute) {
-          // router.push({
-          //   pathname: item.actionRoute,
-          //   params: item.actionParams || {}
-          // });
-          console.log('Navigate to:', item.actionRoute, item.actionParams);
+      onPress={async () => {
+        try {
+          // First check if the notification has a valid ID
+          if (!item.id) {
+            console.error('Notification missing ID:', item);
+            return;
+          }
+
+          console.log('Marking notification as read:', item.id);
+          
+          // Mark as read - wrap in try/catch to handle errors gracefully
+          try {
+            await markAsRead(item.id);
+          } catch (error) {
+            console.error('Error marking notification as read:', error);
+            // Continue with navigation even if marking as read fails
+          }
+          
+          // Navigate to action route if available
+          if (item.actionable && item.actionRoute) {
+            // Convert string route to a typed route
+            if (item.actionRoute === '/messages/[id]' && item.actionParams?.id) {
+              router.push({
+                pathname: '/messages/[id]',
+                params: { id: item.actionParams.id }
+              });
+            } else if (item.actionRoute === '/home/check_in') {
+              router.push('/home/check_in');
+            } else if (item.actionRoute === '/home/support_network') {
+              router.push('/home/support_network');
+            } else if (item.actionRoute === '/community/[id]' && item.actionParams?.id) {
+              router.push({
+                pathname: '/community/[id]',
+                params: { id: item.actionParams.id }
+              });
+            } else {
+              console.log('Unknown route:', item.actionRoute);
+            }
+          }
+        } catch (error) {
+          console.error('Error handling notification tap:', error);
         }
       }}
     >
@@ -360,14 +378,19 @@ export default function NotificationsScreen() {
         </View>
         <Pressable 
           style={styles.headerAction}
-          onPress={() => {
-            // Implement mark all as read functionality
+          onPress={async () => {
             const unreadCount = notifications.filter(n => !n.read).length;
             if (unreadCount > 0) {
-              // Mark all as read logic would go here
-              setNotifications(prev => 
-                prev.map(notif => ({ ...notif, read: true }))
-              );
+              try {
+                await notificationsApi.markAllAsRead();
+                // Update UI
+                setNotifications(prev => 
+                  prev.map(notif => ({ ...notif, read: true }))
+                );
+              } catch (error) {
+                console.error('Failed to mark all as read:', error);
+                fetchNotifications();
+              }
             }
           }}
         >
@@ -617,7 +640,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-// Need to import these to make the code work
-import { useMemo } from 'react';
-import { ScrollView, SectionList } from 'react-native';

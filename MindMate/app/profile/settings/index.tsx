@@ -8,6 +8,8 @@ import { auth } from '@/services/auth';
 import { Stack, Link } from 'expo-router';
 import React from 'react';
 import { checkInApi } from '@/services/checkInApi';
+import { notificationService } from '@/services/notificationService';
+
 
 export default function SettingsScreen() {
   const [isDoNotDisturb, setIsDoNotDisturb] = useState(false);
@@ -64,10 +66,42 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
+              // First reset the timer on the server
               await checkInApi.resetCheckInTimer();
+              
+              // Then directly trigger a local notification using the same method as the test notification
+              // This ensures we're using the exact same code path that's known to work
+              await notificationService.sendTestNotification();
+              
               Alert.alert('Success', 'Check-in timer has been reset');
             } catch (error) {
               Alert.alert('Error', 'Failed to reset check-in timer');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleSendTestNotification = async () => {
+    Alert.alert(
+      "Send Test Notification",
+      "Send a test notification?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Send",
+          onPress: async () => {
+            try {
+              const notificationId = await notificationService.sendTestNotification();
+              console.log('Test notification sent with ID:', notificationId);
+              Alert.alert('Success', 'Test notification sent');
+            } catch (error) {
+              console.error('Error sending test notification:', error);
+              Alert.alert('Error', 'Failed to send test notification');
             }
           }
         }
@@ -175,7 +209,7 @@ export default function SettingsScreen() {
             <Text style={styles.chevron}>›</Text>
           </Pressable>
 
-          {/* Add the new Reset Check-in Timer button */}
+          {/* Reset Check-in Timer button */}
           <Pressable
             style={styles.menuItem}
             onPress={handleResetCheckInTimer}
@@ -185,6 +219,21 @@ export default function SettingsScreen() {
               <View>
                 <Text style={styles.menuTitle}>Reset Check-in Timer</Text>
                 <Text style={styles.menuSubtitle}>Developer tool to reset check-in cooldown</Text>
+              </View>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+
+          {/* Test Notification button */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={handleSendTestNotification}
+          >
+            <View style={styles.leftContent}>
+              <FontAwesome name="bell" size={20} color="#666" style={styles.icon} />
+              <View>
+                <Text style={styles.menuTitle}>Send Test Notification</Text>
+                <Text style={styles.menuSubtitle}>Developer tool to test push notifications</Text>
               </View>
             </View>
             <Text style={styles.chevron}>›</Text>

@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { AuthUser } from '../services/auth';
+import { notificationService } from '../services/notificationService';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -19,7 +21,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    loadAuthState();
+    const initializeApp = async () => {
+      await loadAuthState();
+      
+      // Initialize notification service when the app starts
+      try {
+        console.log('Initializing notification service from AuthContext');
+        await notificationService.initialize();
+        
+        // Set up notification handlers
+        const subscription = Notifications.addNotificationReceivedListener(notification => {
+          console.log('Notification received in foreground:', notification);
+        });
+        
+        const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+          console.log('User tapped on notification:', response);
+          // Handle notification tap here
+        });
+        
+        return () => {
+          subscription.remove();
+          responseSubscription.remove();
+        };
+      } catch (error) {
+        console.error('Failed to initialize notification service:', error);
+      }
+    };
+    
+    initializeApp();
   }, []);
 
   useEffect(() => {

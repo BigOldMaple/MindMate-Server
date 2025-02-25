@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '@/services/buddyPeerApi';
 import { useFocusEffect } from '@react-navigation/native';
 import { checkInApi } from '@/services/checkInApi';
+import { notificationService } from '@/services/notificationService';
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);
@@ -48,18 +49,49 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    // Define the proper interface for the check-in status
+    interface CheckInStatusType {
+      canCheckIn: boolean;
+      nextCheckInTime?: Date;
+    }
+    
+    // Keep track of the last check-in status to detect changes
+    let lastCheckInStatus: CheckInStatusType = { canCheckIn: true };
+    let lastNotificationTime: Date | null = null;
+    
     const loadCheckInStatus = async () => {
       try {
         const status = await checkInApi.getCheckInStatus();
+        
+        // Update state
         setCheckInStatus(status);
+        
+        // Detect transitions from cooldown to available
+        const wasInCooldown = !lastCheckInStatus.canCheckIn;
+        const isNowAvailable = status.canCheckIn;
+        
+        // If transitioning from cooldown to available, we could add additional logic here
+        if (wasInCooldown && isNowAvailable) {
+          console.log('Check-in is now available after cooldown');
+          // No need to schedule a notification here, as the server creates it
+        }
+        
+        // If in cooldown and approaching the end, the server will handle notification
+        // We don't need to do anything on the client side
+        
+        // Update the last status
+        lastCheckInStatus = status;
       } catch (error) {
         console.error('Error loading check-in status:', error);
       }
     };
-
+  
+    // Load initial status
     loadCheckInStatus();
-    const interval = setInterval(loadCheckInStatus, 2500); 
-
+    
+    // Use a longer interval to reduce server load
+    const interval = setInterval(loadCheckInStatus, 10000); 
+  
     return () => clearInterval(interval);
   }, []);
 

@@ -29,6 +29,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
   try {
     const { mood, activities, notes } = req.body;
 
+    // Create the check-in
     const checkIn = new CheckIn({
       userId: req.userId,
       mood,
@@ -38,6 +39,24 @@ router.post('/', authenticateToken, async (req: any, res) => {
     });
 
     await checkIn.save();
+
+    // After successful check-in submission, clear any existing "Check-In Available" notifications
+    // to prevent notification spam during cooldown
+    const { Notification } = require('../Database/NotificationSchema');
+    await Notification.deleteMany({
+      userId: req.userId,
+      type: 'wellness',
+      title: 'Check-In Available',
+      read: false
+    });
+
+    // Set a flag in the database to indicate that we're in a cooldown period
+    // This helps prevent duplicate notifications
+    const { DeviceToken } = require('../Database/DeviceTokenSchema');
+    await DeviceToken.updateMany(
+      { userId: req.userId },
+      { $set: { 'metadata.checkInCooldown': true, 'metadata.lastCheckIn': new Date() } }
+    );
 
     res.status(201).json({
       message: 'Check-in submitted successfully',
@@ -84,13 +103,105 @@ router.get('/status', authenticateToken, async (req: any, res) => {
     const now = new Date();
     const timeSinceLastCheckIn = now.getTime() - lastCheckIn.timestamp.getTime();
     const cooldownPeriod = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    
+    // For demo purposes, you could use a shorter cooldown
+    // const cooldownPeriod = 5 * 60 * 1000; // 5 minutes in milliseconds
 
     if (timeSinceLastCheckIn < cooldownPeriod) {
+      // User is in cooldown, cannot check in
       const nextCheckInTime = new Date(lastCheckIn.timestamp.getTime() + cooldownPeriod);
+      
+      // DO NOT create a notification while in cooldown period unless approaching the end
+      // Only check if we're within the last 30 seconds of cooldown
+      const timeUntilAvailable = cooldownPeriod - timeSinceLastCheckIn;
+      const isApproachingAvailability = timeUntilAvailable < 30000; // 30 seconds
+      
+      if (isApproachingAvailability) {
+        const { Notification } = require('../Database/NotificationSchema');
+        const { DeviceToken } = require('../Database/DeviceTokenSchema');
+        
+        // Check if we already sent a notification for this cooldown period
+        const existingNotification = await Notification.findOne({
+          userId: req.userId,
+          type: 'wellness',
+          title: 'Check-In Available',
+          time: { $gt: lastCheckIn.timestamp }
+        });
+        
+        // Also check device metadata to see if we're in a cooldown period
+        const deviceWithCooldown = await DeviceToken.findOne({
+          userId: req.userId,
+          'metadata.checkInCooldown': true,
+          'metadata.lastCheckIn': { $gte: lastCheckIn.timestamp }
+        });
+        
+        // Only create notification if one doesn't exist and we're not in a cooldown
+        if (!existingNotification && !deviceWithCooldown) {
+          console.log('Creating check-in available notification (approaching availability)');
+          
+          // Schedule a notification for when the cooldown ends
+          const notification = new Notification({
+            userId: req.userId,
+            type: 'wellness',
+            title: 'Check-In Available Soon',
+            message: 'Your next check-in will be available in less than 30 seconds',
+            read: false,
+            time: now,
+            actionable: false
+          });
+          
+          await notification.save();
+          
+          // Update all device tokens to mark notification as sent
+          await DeviceToken.updateMany(
+            { userId: req.userId },
+            { 
+              $set: { 
+                'metadata.lastNotification': now 
+              }
+            }
+          );
+        }
+      }
+      
       return res.json({
         canCheckIn: false,
         nextCheckInTime
       });
+    }
+    
+    // Cooldown is over, user can check in
+    // When transitioning from cooldown to available, create a notification
+    const { DeviceToken } = require('../Database/DeviceTokenSchema');
+    
+    // Find any devices that still have the cooldown flag set
+    const devicesInCooldown = await DeviceToken.find({
+      userId: req.userId,
+      'metadata.checkInCooldown': true
+    });
+    
+    if (devicesInCooldown.length > 0) {
+      // Reset the cooldown flag
+      await DeviceToken.updateMany(
+        { userId: req.userId },
+        { $set: { 'metadata.checkInCooldown': false } }
+      );
+      
+      // Create a notification that check-in is now available
+      const { Notification } = require('../Database/NotificationSchema');
+      const notification = new Notification({
+        userId: req.userId,
+        type: 'wellness',
+        title: 'Check-In Available',
+        message: 'Your next check-in is now available. How are you feeling today?',
+        read: false,
+        time: now,
+        actionable: true,
+        actionRoute: '/home/check_in'
+      });
+      
+      await notification.save();
+      console.log('Created check-in available notification (cooldown ended)');
     }
 
     res.json({ canCheckIn: true });
@@ -109,69 +220,48 @@ router.post('/reset-timer', authenticateToken, async (req: any, res) => {
       { sort: { timestamp: -1 } }
     );
     
-    res.json({ message: 'Check-in timer reset successfully' });
+    // Reset cooldown flags on all devices
+    const { DeviceToken } = require('../Database/DeviceTokenSchema');
+    await DeviceToken.updateMany(
+      { userId: req.userId },
+      { $set: { 'metadata.checkInCooldown': false } }
+    );
+    
+    // Clear any existing "Check-In Available" notifications
+    const { Notification } = require('../Database/NotificationSchema');
+    await Notification.deleteMany({
+      userId: req.userId,
+      type: 'wellness',
+      title: { $in: ['Check-In Available', 'Check-In Available Soon'] }
+    });
+    
+    // Create a fresh notification that the check-in is now available
+    const notification = new Notification({
+      userId: req.userId,
+      type: 'wellness',
+      title: 'Check-In Available',
+      message: 'Your next check-in is now available. How are you feeling today?',
+      read: false,
+      time: new Date(),
+      actionable: true,
+      actionRoute: '/home/check_in'
+    });
+
+    await notification.save();
+    
+    // Add a flag to trigger an immediate local notification on the device
+    res.json({ 
+      message: 'Check-in timer reset successfully',
+      notification: {
+        id: notification._id,
+        title: notification.title,
+        message: notification.message,
+        shouldTriggerLocalNotification: true // This flag tells the app to show a local notification
+      }
+    });
   } catch (error) {
     console.error('Reset check-in timer error:', error);
     res.status(500).json({ error: 'Failed to reset check-in timer' });
-  }
-});
-// --------------------------------------------------------------------------------------------
-
-// Get check-in statistics
-router.get('/stats', authenticateToken, async (req: any, res) => {
-  try {
-    const pipeline = [
-      { $match: { userId: req.userId } },
-      {
-        $group: {
-          _id: null,
-          averageMood: { $avg: '$mood.score' },
-          totalCheckIns: { $sum: 1 },
-          moodDistribution: {
-            $push: '$mood.score'
-          },
-          activityLevels: {
-            $push: '$activities'
-          }
-        }
-      }
-    ];
-
-    const stats = await CheckIn.aggregate(pipeline);
-
-    if (stats.length === 0) {
-      return res.json({
-        averageMood: 0,
-        totalCheckIns: 0,
-        moodDistribution: [],
-        activityLevels: []
-      });
-    }
-
-    // Process the mood distribution
-    const moodDistribution = stats[0].moodDistribution.reduce((acc: any, score: number) => {
-      acc[score] = (acc[score] || 0) + 1;
-      return acc;
-    }, {});
-
-    // Process activity levels
-    const activityStats = stats[0].activityLevels.flat().reduce((acc: any, activity: any) => {
-      if (!acc[activity.type]) {
-        acc[activity.type] = { low: 0, moderate: 0, high: 0 };
-      }
-      acc[activity.type][activity.level]++;
-      return acc;
-    }, {});
-
-    res.json({
-      averageMood: Math.round(stats[0].averageMood * 10) / 10,
-      totalCheckIns: stats[0].totalCheckIns,
-      moodDistribution,
-      activityStats
-    });
-  } catch (error) {
-    console.error('Get check-in stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch check-in statistics' });
   }
 });
 

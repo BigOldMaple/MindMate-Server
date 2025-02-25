@@ -117,7 +117,7 @@ export const checkInApi = {
   },
 
   // DEVELOPER OPTION: Reset the check-in timer ---------------------------------------------------
-  async resetCheckInTimer(): Promise<void> {
+  async resetCheckInTimer(): Promise<any> {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/check-in/reset-timer`, {
@@ -128,6 +128,9 @@ export const checkInApi = {
       if (!response.ok) {
         throw new Error('Failed to reset check-in timer');
       }
+      
+      // Return the full response from the server
+      return response.json();
     } catch (error) {
       throw new CheckInApiError(
         error instanceof Error ? error.message : 'Failed to reset check-in timer'

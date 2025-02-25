@@ -11,6 +11,7 @@ import profileRoutes from './routes/profile';
 import buddyPeerRoutes from './routes/buddyPeer';
 import chatRoutes from './routes/chat';
 import checkInRoutes from './routes/checkIn';
+import notificationsRoutes from './routes/notifications';
 
 const app = express();
 const server = http.createServer(app);
@@ -65,6 +66,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/buddy-peer', buddyPeerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/check-in', checkInRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Enhanced health check route with WebSocket info
 app.get('/health', (_req, res) => {
