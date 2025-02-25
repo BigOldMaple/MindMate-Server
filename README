@@ -1,0 +1,180 @@
+# MindMate Development Guide
+
+This document outlines the development workflow for making changes to the MindMate application.
+
+## Development Environment
+
+- React Native with Expo
+- TypeScript for type safety
+- Expo Router for navigation
+
+## Types of Changes & Their Workflows
+
+### 1. JavaScript/TypeScript Changes (No Rebuild Required)
+
+For changes like:
+- UI components and screens
+- Business logic
+- State management
+- Styling updates
+- Adding new routes
+
+**Workflow:**
+```bash
+# Start the development server
+npx expo start
+
+# Press 'a' to open on Android emulator
+# Press 'i' to open on iOS simulator
+```
+
+Your changes will be automatically reflected through hot reload when you save files.
+
+### 2. Native Module Changes (Rebuild Required)
+
+For changes like:
+- Adding new native dependencies
+- Updating native modules
+- Modifying native module configurations
+
+**Workflow:**
+```bash
+# Install the new native module
+npx expo install [package-name]
+
+# Add required imports and configuration to your code
+# For example: import { Package } from 'package-name';
+
+# Clean and rebuild the app
+npx expo prebuild --clean
+npx expo run:android  # or npx expo run:ios
+```
+
+### 3. Configuration Changes (Rebuild Required)
+
+For changes to:
+- app.json settings
+- Permissions
+- Expo plugins
+- Native app properties
+
+**Workflow:**
+```bash
+# Make changes to app.json or other config files
+
+# Clean and rebuild
+npx expo prebuild --clean
+npx expo run:android  # or npx expo run:ios
+```
+
+## Testing Your Changes
+
+### Running Tests
+```bash
+# Run Jest tests
+npm test
+
+# Check for TypeScript errors
+npm run typecheck
+```
+
+### Manual Testing
+1. Test on both Android and iOS if possible
+2. Test on physical devices before releases
+3. Test core user flows after significant changes
+
+## Troubleshooting Common Issues
+
+### ViewManagerResolver Error
+If you see: "ViewManagerResolver returned null for either RNSScreen or RCTRNSScreen"
+
+**Solution:**
+1. Add proper imports:
+   ```javascript
+   import { enableScreens } from 'react-native-screens';
+   enableScreens();
+   ```
+2. Rebuild the app
+
+### Native Module Not Linked
+If you see: "(NOBRIDGE) ERROR Screen native module hasn't been linked"
+
+**Solution:**
+This requires a full rebuild:
+```bash
+npx expo prebuild --clean
+npx expo run:android  # or npx expo run:ios
+```
+
+### Metro Bundler Issues
+If you encounter bundler problems:
+```bash
+# Clear cache and restart
+npx expo start --clear
+```
+
+## Specific Feature Development Guidelines
+
+### Adding New Screens
+1. Create the screen component in the appropriate directory under `app/`
+2. If it's a top-level screen, add it to the Stack in `_layout.tsx`
+3. No rebuild required unless it uses new native functionality
+
+### Adding New API Services
+1. Create service files in the `services/` directory
+2. Import and use them in your components
+3. No rebuild required
+
+### Working with Notifications
+1. Notification logic changes don't require rebuilds
+2. Changes to notification permissions in app.json require rebuilds
+
+### Check-in Feature Changes
+1. UI and logic changes to the check-in flow don't require rebuilds
+2. Sensor integration changes might require rebuilds
+
+## Development Best Practices
+
+1. **Commit Frequently**: Make small, focused commits with clear messages
+
+2. **Create Feature Branches**: Work in feature branches and merge to main when complete
+
+3. **Test Before Commit**: Always test your changes before committing
+
+4. **Rebuild Sparingly**: Only rebuild when absolutely necessary to save time
+
+5. **Track Dependencies**: Keep track of which packages require native code
+
+6. **Use TypeScript**: Leverage TypeScript for better code quality
+
+7. **Document Changes**: Update documentation when adding/changing features
+
+## Release Process
+
+1. **Development**: Make and test changes following the workflows above
+
+2. **Preview Build**: Create a preview build for testing:
+   ```bash
+   npx eas build --profile preview --platform android
+   ```
+
+3. **Production Build**: Create a production build:
+   ```bash
+   npx eas build --profile production --platform android
+   ```
+
+4. **OTA Updates**: For JS-only changes in production:
+   ```bash
+   npx eas update --branch production
+   ```
+
+## Quick Reference
+
+| Change Type | Rebuild Required? | Command |
+|-------------|-------------------|---------|
+| UI Components | No | `npx expo start` |
+| Logic/State | No | `npx expo start` |
+| New Screen | No | `npx expo start` |
+| Native Module | Yes | `npx expo run:android` |
+| Permissions | Yes | `npx expo run:android` |
+| App Config | Yes | `npx expo run:android` |
