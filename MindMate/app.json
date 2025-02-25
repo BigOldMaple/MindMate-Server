@@ -47,8 +47,8 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 33,
-            "targetSdkVersion": 33,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
             "buildToolsVersion": "33.0.0",
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResources": true,
