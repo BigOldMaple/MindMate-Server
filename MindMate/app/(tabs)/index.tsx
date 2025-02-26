@@ -1,13 +1,14 @@
-// app/(tabs)/index.tsx
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, router } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
 import { buddyPeerApi, BuddyPeer, BuddyPeerRequest } from '@/services/buddyPeerApi';
 import { useFocusEffect } from '@react-navigation/native';
 import { checkInApi } from '@/services/checkInApi';
 import { notificationService } from '@/services/notificationService';
+import { notificationsApi } from '@/services/notificationsApi';
+import * as SecureStore from 'expo-secure-store';
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);
@@ -18,6 +19,9 @@ export default function HomeScreen() {
     canCheckIn: boolean;
     nextCheckInTime?: Date;
   }>({ canCheckIn: true });
+  
+  // Use refs to track previous check-in status reliably across renders
+  const prevCheckInStatusRef = useRef<boolean>(true);
 
   const loadBuddyData = useCallback(async () => {
     try {
@@ -55,10 +59,6 @@ export default function HomeScreen() {
       nextCheckInTime?: Date;
     }
 
-    // Keep track of the last check-in status to detect changes
-    let lastCheckInStatus: CheckInStatusType = { canCheckIn: true };
-    let lastNotificationTime: Date | null = null;
-
     const loadCheckInStatus = async () => {
       try {
         const status = await checkInApi.getCheckInStatus();
@@ -67,20 +67,26 @@ export default function HomeScreen() {
         setCheckInStatus(status);
 
         // Detect transitions from cooldown to available
-        const wasInCooldown = !lastCheckInStatus.canCheckIn;
+        const wasInCooldown = !prevCheckInStatusRef.current;
         const isNowAvailable = status.canCheckIn;
 
-        // If transitioning from cooldown to available, we could add additional logic here
+        // If transitioning from cooldown to available, refresh notifications
         if (wasInCooldown && isNowAvailable) {
           console.log('Check-in is now available after cooldown');
-          // No need to schedule a notification here, as the server creates it
+          
+          // Set flag to refresh notifications
+          await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
+          
+          // Fetch notifications to update the badge count
+          try {
+            await notificationsApi.getNotifications();
+          } catch (error) {
+            console.error('Error refreshing notifications:', error);
+          }
         }
 
-        // If in cooldown and approaching the end, the server will handle notification
-        // We don't need to do anything on the client side
-
-        // Update the last status
-        lastCheckInStatus = status;
+        // Update the previous status ref for next comparison
+        prevCheckInStatusRef.current = status.canCheckIn;
       } catch (error) {
         console.error('Error loading check-in status:', error);
       }
@@ -90,7 +96,7 @@ export default function HomeScreen() {
     loadCheckInStatus();
 
     // Use a longer interval to reduce server load
-    const interval = setInterval(loadCheckInStatus, 10000);
+    const interval = setInterval(loadCheckInStatus, 2000);
 
     return () => clearInterval(interval);
   }, []);
