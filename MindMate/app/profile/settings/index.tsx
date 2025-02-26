@@ -9,6 +9,8 @@ import { Stack, Link } from 'expo-router';
 import React from 'react';
 import { checkInApi } from '@/services/checkInApi';
 import { notificationService } from '@/services/notificationService';
+import { notificationsApi, Notification as NotificationType } from '@/services/notificationsApi';
+import * as SecureStore from 'expo-secure-store';
 
 
 export default function SettingsScreen() {
@@ -16,6 +18,7 @@ export default function SettingsScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
   const { signOut } = useAuth();
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -52,6 +55,21 @@ export default function SettingsScreen() {
     );
   };
 
+  const refreshNotifications = async (): Promise<void> => {
+    try {
+      // For immediate refresh of notifications when the user goes to the notifications screen,
+      // we'll store a flag in secure storage that the notifications screen can check
+      await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
+      
+      // We could also directly fetch notifications here to warm the cache
+      await notificationsApi.getNotifications();
+      
+      console.log('Notifications refreshed after timer reset');
+    } catch (error) {
+      console.error('Error refreshing notifications:', error);
+    }
+  };
+
   const handleResetCheckInTimer = async () => {
     Alert.alert(
       "Reset Check-in Timer",
@@ -66,23 +84,89 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
+              // Show loading indicator
+              setIsResetting(true);
+              
               // First reset the timer on the server
-              await checkInApi.resetCheckInTimer();
+              const response = await checkInApi.resetCheckInTimer();
               
-              // Then directly trigger a local notification using the same method as the test notification
-              // This ensures we're using the exact same code path that's known to work
+              // Clear any local cached check-in status
+              try {
+                await SecureStore.deleteItemAsync('lastCheckInTime');
+                await SecureStore.deleteItemAsync('nextCheckInTime');
+              } catch (cacheError) {
+                console.error('Error clearing cached check-in status:', cacheError);
+                // Continue even if cache clearing fails
+              }
+              
+              // Clear any existing check-in related notifications
+              try {
+                const notifications = await notificationsApi.getNotifications();
+                
+                // Find any check-in related notifications
+                const checkInNotifications = notifications.filter(
+                  n => n.type === 'wellness' && 
+                       (n.title === 'Check-In Complete' || 
+                        n.title === 'Check-In Available' || 
+                        n.title === 'Check-In Available Soon')
+                );
+                
+                // Delete each notification
+                for (const notification of checkInNotifications) {
+                  const notificationId = notification.id || notification._id;
+                  if (notificationId) {
+                    try {
+                      await notificationsApi.deleteNotification(notificationId);
+                    } catch (err) {
+                      console.error('Error deleting notification:', err);
+                    }
+                  }
+                }
+              } catch (notifError) {
+                console.error('Error handling notifications during reset:', notifError);
+              }
+              
+              // Manually create a new Check-In Available notification if one wasn't returned by the server
+              if (response?.notification?.id) {
+                console.log('Server created notification:', response.notification);
+              } else {
+                try {
+                  // Create a new notification locally
+                  const newNotification: NotificationType = {
+                    type: 'wellness',
+                    title: 'Check-In Available',
+                    message: 'Your next check-in is now available. How are you feeling today?',
+                    read: false,
+                    time: new Date(),
+                    actionable: true,
+                    actionRoute: '/home/check_in'
+                  };
+                  
+                  await notificationsApi.createNotification(newNotification);
+                  console.log('Created local notification for check-in availability');
+                } catch (createErr) {
+                  console.error('Error creating local notification:', createErr);
+                }
+              }
+              
+              // Then trigger a local push notification
               await notificationService.sendTestNotification();
-              
-              Alert.alert('Success', 'Check-in timer has been reset');
+              await refreshNotifications();
+              Alert.alert(
+                'Success', 
+                'Check-in timer has been reset. You should now have a new Check-In Available notification.'
+              );
             } catch (error) {
+              console.error('Reset timer error:', error);
               Alert.alert('Error', 'Failed to reset check-in timer');
+            } finally {
+              setIsResetting(false);
             }
           }
         }
       ]
     );
   };
-
   const handleSendTestNotification = async () => {
     Alert.alert(
       "Send Test Notification",
@@ -209,20 +293,26 @@ export default function SettingsScreen() {
             <Text style={styles.chevron}>›</Text>
           </Pressable>
 
-          {/* Reset Check-in Timer button */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={handleResetCheckInTimer}
-          >
-            <View style={styles.leftContent}>
-              <FontAwesome name="clock-o" size={20} color="#666" style={styles.icon} />
-              <View>
-                <Text style={styles.menuTitle}>Reset Check-in Timer</Text>
-                <Text style={styles.menuSubtitle}>Developer tool to reset check-in cooldown</Text>
-              </View>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
+
+{/* Reset Check-in Timer button */}
+<Pressable
+  style={[styles.menuItem, isResetting && styles.disabledMenuItem]}
+  onPress={handleResetCheckInTimer}
+  disabled={isResetting}
+>
+  <View style={styles.leftContent}>
+    <FontAwesome name="clock-o" size={20} color="#666" style={styles.icon} />
+    <View>
+      <Text style={styles.menuTitle}>Reset Check-in Timer</Text>
+      <Text style={styles.menuSubtitle}>Developer tool to reset check-in cooldown</Text>
+    </View>
+  </View>
+  {isResetting ? (
+    <ActivityIndicator size="small" color="#2196F3" />
+  ) : (
+    <Text style={styles.chevron}>›</Text>
+  )}
+</Pressable>
 
           {/* Test Notification button */}
           <Pressable
@@ -268,6 +358,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  disabledMenuItem: {
+    opacity: 0.6,
+  },  
   sectionHeader: {
     fontSize: 13,
     fontWeight: '600',

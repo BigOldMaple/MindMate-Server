@@ -227,12 +227,12 @@ router.post('/reset-timer', authenticateToken, async (req: any, res) => {
       { $set: { 'metadata.checkInCooldown': false } }
     );
     
-    // Clear any existing "Check-In Available" notifications
+    // Clear any existing "Check-In Available" or "Check-In Complete" notifications
     const { Notification } = require('../Database/NotificationSchema');
     await Notification.deleteMany({
       userId: req.userId,
       type: 'wellness',
-      title: { $in: ['Check-In Available', 'Check-In Available Soon'] }
+      title: { $in: ['Check-In Available', 'Check-In Available Soon', 'Check-In Complete'] }
     });
     
     // Create a fresh notification that the check-in is now available

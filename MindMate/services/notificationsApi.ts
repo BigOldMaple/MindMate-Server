@@ -54,6 +54,27 @@ export const notificationsApi = {
     }
   },
 
+  async createNotification(notification: Omit<Notification, 'id' | '_id'>): Promise<Notification> {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_URL}/notifications`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(notification)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create notification');
+      }
+      
+      return response.json();
+    } catch (error) {
+      throw new NotificationsApiError(
+        error instanceof Error ? error.message : 'Failed to create notification'
+      );
+    }
+  },
+
   async markAsRead(id: string): Promise<void> {
     try {
       // Validate the ID

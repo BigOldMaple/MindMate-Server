@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, Pressable, RefreshControl, ActivityIndicator, View as RNView, StatusBar } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
@@ -10,6 +10,7 @@ import { Stack, useRouter } from 'expo-router';
 import { notificationsApi, Notification } from '@/services/notificationsApi';
 import { useMemo } from 'react';
 import { ScrollView, SectionList } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
 // Mock data for fallback when API isn't available
 const MOCK_NOTIFICATIONS: Notification[] = [
@@ -133,6 +134,25 @@ export default function NotificationsScreen() {
     { key: 'community', label: 'Community' }
   ];
 
+  // Check for a refresh flag that might have been set from other screens
+  useEffect(() => {
+    const checkForRefreshFlag = async () => {
+      try {
+        const shouldRefresh = await SecureStore.getItemAsync('shouldRefreshNotifications');
+        if (shouldRefresh === 'true') {
+          console.log('Refresh flag detected, fetching latest notifications');
+          onRefresh();
+          // Clear the flag after refreshing
+          await SecureStore.setItemAsync('shouldRefreshNotifications', 'false');
+        }
+      } catch (error) {
+        console.error('Error checking refresh flag:', error);
+      }
+    };
+    
+    checkForRefreshFlag();
+  }, []);
+
   // Fetch notifications from API
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
@@ -168,7 +188,7 @@ export default function NotificationsScreen() {
       // Optimistically update the UI
       setNotifications(prev =>
         prev.map(notif =>
-          notif.id === id ? { ...notif, read: true } : notif
+          (notif.id === id || notif._id === id) ? { ...notif, read: true } : notif
         )
       );
     } catch (err) {
@@ -184,7 +204,9 @@ export default function NotificationsScreen() {
       await notificationsApi.deleteNotification(id);
 
       // Optimistically update the UI
-      setNotifications(prev => prev.filter(notif => notif.id !== id));
+      setNotifications(prev => prev.filter(notif => 
+        notif.id !== id && notif._id !== id
+      ));
     } catch (err) {
       // If the API call fails, revert the optimistic update
       console.error('Failed to delete notification', err);

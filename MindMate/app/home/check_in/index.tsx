@@ -4,8 +4,7 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter, Stack } from 'expo-router';
 import { checkInApi } from '../../../services/checkInApi';
-import { notificationsApi } from '../../../services/notificationsApi';
-
+import { notificationsApi, Notification as NotificationType } from '../../../services/notificationsApi';
 // Types for our check-in data
 interface MoodData {
   score: number;
@@ -114,7 +113,7 @@ const CheckInScreen = () => {
       const response = await checkInApi.submitCheckIn(checkInData);
       console.log('API response:', response);
       
-      // Clear check-in notifications
+      // Transform check-in notifications instead of just marking them as read
       try {
         // Get all notifications
         const notifications = await notificationsApi.getNotifications();
@@ -125,16 +124,39 @@ const CheckInScreen = () => {
                (n.title === 'Check-In Available' || n.title === 'Check-In Available Soon')
         );
         
-        // Mark each as read
+        // For each notification, create a "completed" version and delete the original
         for (const notification of checkInNotifications) {
-          const notificationId = notification.id || notification._id;
-          if (notificationId) {
-            await notificationsApi.markAsRead(notificationId);
+          // Create a completion notification
+          const moodEmoji = getMoodEmoji(selectedMood!.score);
+          const completedMessage = `You rated your mood as ${selectedMood!.label} ${moodEmoji} and logged ${getSelectedActivitiesCount()} activities.`;
+          
+          try {
+            // First create the new "completed" notification with proper typing
+            const completedNotification: NotificationType = {
+              type: 'wellness',
+              title: 'Check-In Complete',
+              message: completedMessage,
+              read: false,
+              time: new Date(),
+              actionable: false
+            };
+            
+            // Create the notification through API
+            await notificationsApi.createNotification(completedNotification);
+            
+            // Then mark as read the original "available" notification
+            const notificationId = notification.id || notification._id;
+            if (notificationId) {
+              await notificationsApi.markAsRead(notificationId);
+            }
+          } catch (notifErr) {
+            console.error('Error transforming notification:', notifErr);
+            // Continue with other notifications even if one fails
           }
         }
       } catch (err) {
-        console.error('Error clearing check-in notifications:', err);
-        // Continue even if notification clearing fails
+        console.error('Error handling check-in notifications:', err);
+        // Continue even if notification handling fails
       }
       
       // Show success message
@@ -143,6 +165,18 @@ const CheckInScreen = () => {
     } catch (error) {
       console.error('Check-in submission error:', error);
       Alert.alert('Error', 'Failed to submit check-in. Please try again.');
+    }
+  };
+  
+  // Helper function to get emoji based on mood score
+  const getMoodEmoji = (score: number): string => {
+    switch(score) {
+      case 1: return '😔';
+      case 2: return '😐';
+      case 3: return '😊';
+      case 4: return '😃';
+      case 5: return '😄';
+      default: return '😊';
     }
   };
 

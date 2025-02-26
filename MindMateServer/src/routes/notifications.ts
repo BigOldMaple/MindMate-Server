@@ -29,6 +29,36 @@ const authenticateToken = async (req: any, res: any, next: any) => {
   }
 };
 
+// Create a new notification
+router.post('/', authenticateToken, async (req: any, res) => {
+  try {
+    const { type, title, message, actionable, actionRoute, actionParams } = req.body;
+    
+    if (!type || !title || !message) {
+      return res.status(400).json({ error: 'Type, title, and message are required' });
+    }
+    
+    const notification = new Notification({
+      userId: req.userId,
+      type,
+      title,
+      message,
+      read: false,
+      time: new Date(),
+      actionable: actionable || false,
+      actionRoute,
+      actionParams
+    });
+    
+    await notification.save();
+    
+    res.status(201).json(notification);
+  } catch (error) {
+    console.error('Create notification error:', error);
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
 // Get all notifications for the current user
 router.get('/', authenticateToken, async (req: any, res) => {
   try {

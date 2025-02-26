@@ -169,6 +169,10 @@ export const checkInApi = {
         throw new Error('Failed to reset check-in timer');
       }
       
+      // Also clear local cache
+      await SecureStore.deleteItemAsync('lastCheckInTime');
+      await SecureStore.deleteItemAsync('nextCheckInTime');
+      
       // Return the full response from the server
       return response.json();
     } catch (error) {
