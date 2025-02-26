@@ -5,7 +5,8 @@ import { getApiUrl } from './apiConfig';
 const API_URL = getApiUrl();
 
 export interface Notification {
-  id: string;
+  id?: string;     // Client-side ID
+  _id?: string;    // MongoDB ID from server
   type: 'support' | 'wellness' | 'community' | 'alert' | 'buddy';
   title: string;
   message: string;
@@ -14,6 +15,9 @@ export interface Notification {
   actionable?: boolean;
   actionRoute?: string;
   actionParams?: Record<string, string>;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  userId?: string;
 }
 
 class NotificationsApiError extends Error {
@@ -57,10 +61,24 @@ export const notificationsApi = {
         throw new NotificationsApiError('Invalid notification ID');
       }
 
-      console.log('Sending mark as read API request for notification:', id);
+      // If the ID starts with an object notation, extract the string ID
+      let notificationId = id;
+      if (id.includes('"_id":') || id.includes('_id')) {
+        try {
+          // It could be a stringified object or already an object
+          const parsed = typeof id === 'string' && id.startsWith('{') ? JSON.parse(id) : id;
+          // Handle both cases: parsed object or object that wasn't stringified
+          notificationId = (parsed._id || parsed.id || id).toString();
+        } catch (parseError) {
+          console.error('Error parsing notification ID:', parseError);
+          // Continue with the original ID if parsing fails
+        }
+      }
+      
+      console.log('Sending mark as read API request for notification:', notificationId);
       
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_URL}/notifications/${id}/read`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}/read`, {
         method: 'POST',
         headers
       });
@@ -98,8 +116,19 @@ export const notificationsApi = {
 
   async deleteNotification(id: string): Promise<void> {
     try {
+      // Extract ID similar to markAsRead
+      let notificationId = id;
+      if (id.includes('"_id":') || id.includes('_id')) {
+        try {
+          const parsed = typeof id === 'string' && id.startsWith('{') ? JSON.parse(id) : id;
+          notificationId = (parsed._id || parsed.id || id).toString();
+        } catch (parseError) {
+          console.error('Error parsing notification ID:', parseError);
+        }
+      }
+
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_URL}/notifications/${id}`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}`, {
         method: 'DELETE',
         headers
       });
@@ -113,3 +142,6 @@ export const notificationsApi = {
     }
   }
 };
+
+// For compatibility with the dynamic import in handleSubmit
+export const Notification = notificationsApi;

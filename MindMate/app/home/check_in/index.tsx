@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, Pressable, View as DefaultView, TextInput, SafeAreaView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, ScrollView, Pressable, View as DefaultView, TextInput, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter, Stack } from 'expo-router';
 import { checkInApi } from '../../../services/checkInApi';
+import { notificationsApi } from '../../../services/notificationsApi';
 
 // Types for our check-in data
 interface MoodData {
@@ -42,6 +43,36 @@ const CheckInScreen = () => {
   const [selectedMood, setSelectedMood] = useState<MoodData | null>(null);
   const [moodDescription, setMoodDescription] = useState('');
   const [activities, setActivities] = useState<{ [key: string]: string }>({});
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
+  const [isInCooldown, setIsInCooldown] = useState(false);
+  const [nextCheckInTime, setNextCheckInTime] = useState<Date | null>(null);
+
+  // Verify check-in status when the screen loads
+  useEffect(() => {
+    const verifyCheckInStatus = async () => {
+      try {
+        setIsCheckingStatus(true);
+        const status = await checkInApi.getCheckInStatus();
+        
+        if (!status.canCheckIn) {
+          setIsInCooldown(true);
+          if (status.nextCheckInTime) {
+            setNextCheckInTime(new Date(status.nextCheckInTime));
+          }
+          
+          // We don't need to immediately navigate back - just show the cooldown state
+          // This provides a better UX by explaining why they can't check in
+        }
+      } catch (error) {
+        console.error('Error checking check-in status:', error);
+        // If we can't verify status, assume they can check in
+      } finally {
+        setIsCheckingStatus(false);
+      }
+    };
+    
+    verifyCheckInStatus();
+  }, []);
 
   const handleMoodSelect = (mood: MoodData) => {
     setSelectedMood(mood);
@@ -83,6 +114,29 @@ const CheckInScreen = () => {
       const response = await checkInApi.submitCheckIn(checkInData);
       console.log('API response:', response);
       
+      // Clear check-in notifications
+      try {
+        // Get all notifications
+        const notifications = await notificationsApi.getNotifications();
+        
+        // Filter for check-in related notifications
+        const checkInNotifications = notifications.filter(
+          n => n.type === 'wellness' && 
+               (n.title === 'Check-In Available' || n.title === 'Check-In Available Soon')
+        );
+        
+        // Mark each as read
+        for (const notification of checkInNotifications) {
+          const notificationId = notification.id || notification._id;
+          if (notificationId) {
+            await notificationsApi.markAsRead(notificationId);
+          }
+        }
+      } catch (err) {
+        console.error('Error clearing check-in notifications:', err);
+        // Continue even if notification clearing fails
+      }
+      
       // Show success message
       Alert.alert('Success', 'Check-in submitted successfully');
       router.back();
@@ -94,6 +148,65 @@ const CheckInScreen = () => {
 
   const isStepOneValid = selectedMood !== null;
 
+  // Show loading screen while checking status
+  if (isCheckingStatus) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>Checking availability...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  
+  // If in cooldown, show the cooldown screen
+  if (isInCooldown) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Daily Check-in</Text>
+            <Text style={styles.headerDate}>{new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.cooldownContainer}>
+          <FontAwesome name="clock-o" size={64} color="#666" />
+          <Text style={styles.cooldownTitle}>Check-In Not Available</Text>
+          <Text style={styles.cooldownText}>
+            You have already completed your check-in for today.
+          </Text>
+          {nextCheckInTime && (
+            <Text style={styles.cooldownText}>
+              Next check-in available: {nextCheckInTime.toLocaleString()}
+            </Text>
+          )}
+          <Pressable
+            style={styles.backToHomeButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backToHomeButtonText}>Back to Home</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Regular check-in form when user can check in
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
@@ -469,6 +582,50 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: {
     opacity: 0.5,
+  },
+  // Additional styles for new components
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  cooldownContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#F5F6FA',
+  },
+  cooldownTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  cooldownText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  backToHomeButton: {
+    backgroundColor: '#2196F3',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  backToHomeButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

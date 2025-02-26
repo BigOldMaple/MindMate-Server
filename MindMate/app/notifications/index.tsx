@@ -76,12 +76,12 @@ const MOCK_NOTIFICATIONS: Notification[] = [
 // Group notifications by date
 const groupNotificationsByDate = (notifications: Notification[]) => {
   const groups: Record<string, Notification[]> = {};
-  
+
   notifications.forEach(notification => {
     // Convert time string to an actual date for grouping
     let dateKey = 'Today';
     const time = typeof notification.time === 'string' ? notification.time : notification.time;
-    
+
     if (typeof time === 'string') {
       if (time.includes('day')) {
         dateKey = time.includes('1 day') ? 'Yesterday' : 'Earlier';
@@ -94,7 +94,7 @@ const groupNotificationsByDate = (notifications: Notification[]) => {
       const notifDate = new Date(time);
       const diffTime = Math.abs(now.getTime() - notifDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
+
       if (diffDays === 0) {
         dateKey = 'Today';
       } else if (diffDays === 1) {
@@ -105,13 +105,13 @@ const groupNotificationsByDate = (notifications: Notification[]) => {
         dateKey = 'Earlier';
       }
     }
-    
+
     if (!groups[dateKey]) {
       groups[dateKey] = [];
     }
     groups[dateKey].push(notification);
   });
-  
+
   return groups;
 };
 
@@ -123,7 +123,7 @@ export default function NotificationsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Available filter options
   const filterOptions = [
     { key: null, label: 'All' },
@@ -137,7 +137,7 @@ export default function NotificationsScreen() {
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       // Call the notifications API
       const data = await notificationsApi.getNotifications();
@@ -145,29 +145,29 @@ export default function NotificationsScreen() {
     } catch (err) {
       console.error('Error fetching notifications:', err);
       setError(err instanceof Error ? err.message : 'Failed to load notifications');
-      
+
       // Fallback to mock data if the API fails
       setNotifications(MOCK_NOTIFICATIONS);
     } finally {
       setIsLoading(false);
     }
   }, []);
-  
+
   // Refresh notifications
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await fetchNotifications();
     setIsRefreshing(false);
   }, [fetchNotifications]);
-  
+
   // Mark notification as read
   const markAsRead = useCallback(async (id: string) => {
     try {
       await notificationsApi.markAsRead(id);
-      
+
       // Optimistically update the UI
-      setNotifications(prev => 
-        prev.map(notif => 
+      setNotifications(prev =>
+        prev.map(notif =>
           notif.id === id ? { ...notif, read: true } : notif
         )
       );
@@ -177,12 +177,12 @@ export default function NotificationsScreen() {
       fetchNotifications();
     }
   }, [fetchNotifications]);
-  
+
   // Delete notification
   const deleteNotification = useCallback(async (id: string) => {
     try {
       await notificationsApi.deleteNotification(id);
-      
+
       // Optimistically update the UI
       setNotifications(prev => prev.filter(notif => notif.id !== id));
     } catch (err) {
@@ -191,33 +191,33 @@ export default function NotificationsScreen() {
       fetchNotifications();
     }
   }, [fetchNotifications]);
-  
+
   // Load notifications when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchNotifications();
     }, [fetchNotifications])
   );
-  
+
   // Filter notifications based on selected filter
   const filteredNotifications = useMemo(() => {
     if (!filter || filter === 'all') return notifications;
-    
+
     if (filter === 'unread') {
       return notifications.filter(notif => !notif.read);
     }
-    
+
     return notifications.filter(notif => notif.type === filter);
   }, [notifications, filter]);
-  
+
   // Group notifications by date
   const groupedNotifications = useMemo(() => {
     return groupNotificationsByDate(filteredNotifications);
   }, [filteredNotifications]);
-  
+
   // Render notification item
   const renderNotificationItem = ({ item }: { item: Notification }) => (
-    <Pressable 
+    <Pressable
       style={[
         styles.notificationItem,
         !item.read && styles.unreadNotification
@@ -225,21 +225,24 @@ export default function NotificationsScreen() {
       onPress={async () => {
         try {
           // First check if the notification has a valid ID
-          if (!item.id) {
+          // MongoDB documents have _id, but we might be using id in our client code
+          const notificationId = item.id || item._id;
+
+          if (!notificationId) {
             console.error('Notification missing ID:', item);
             return;
           }
 
-          console.log('Marking notification as read:', item.id);
-          
+          console.log('Marking notification as read:', notificationId);
+
           // Mark as read - wrap in try/catch to handle errors gracefully
           try {
-            await markAsRead(item.id);
+            await markAsRead(notificationId);
           } catch (error) {
             console.error('Error marking notification as read:', error);
             // Continue with navigation even if marking as read fails
           }
-          
+
           // Navigate to action route if available
           if (item.actionable && item.actionRoute) {
             // Convert string route to a typed route
@@ -268,30 +271,30 @@ export default function NotificationsScreen() {
     >
       <View style={[
         styles.iconContainer,
-        { 
-          backgroundColor: 
+        {
+          backgroundColor:
             item.type === 'support' ? '#FFE4E4' :
-            item.type === 'wellness' ? '#E3F2FD' :
-            item.type === 'community' ? '#E8F5E9' :
-            item.type === 'buddy' ? '#E1F5FE' :
-            '#FFF3E0'
+              item.type === 'wellness' ? '#E3F2FD' :
+                item.type === 'community' ? '#E8F5E9' :
+                  item.type === 'buddy' ? '#E1F5FE' :
+                    '#FFF3E0'
         }
       ]}>
-        <FontAwesome 
+        <FontAwesome
           name={
             item.type === 'support' ? 'heart' :
-            item.type === 'wellness' ? 'check-circle' :
-            item.type === 'community' ? 'users' :
-            item.type === 'buddy' ? 'user-plus' :
-            'exclamation-circle'
+              item.type === 'wellness' ? 'check-circle' :
+                item.type === 'community' ? 'users' :
+                  item.type === 'buddy' ? 'user-plus' :
+                    'exclamation-circle'
           }
           size={20}
           color={
             item.type === 'support' ? '#FF4444' :
-            item.type === 'wellness' ? '#2196F3' :
-            item.type === 'community' ? '#4CAF50' :
-            item.type === 'buddy' ? '#03A9F4' :
-            '#FF9800'
+              item.type === 'wellness' ? '#2196F3' :
+                item.type === 'community' ? '#4CAF50' :
+                  item.type === 'buddy' ? '#03A9F4' :
+                    '#FF9800'
           }
         />
       </View>
@@ -309,12 +312,12 @@ export default function NotificationsScreen() {
       </View>
     </Pressable>
   );
-  
+
   // Render section header
   const renderSectionHeader = ({ section }: { section: { title: string } }) => (
     <Text style={styles.sectionHeader}>{section.title}</Text>
   );
-  
+
   // Transform grouped notifications into sections for SectionList
   const sections = useMemo(() => {
     return Object.entries(groupedNotifications)
@@ -329,7 +332,7 @@ export default function NotificationsScreen() {
   // Hide the default header
   React.useEffect(() => {
     // Configure the header to be hidden when this screen is focused
-    return () => {}; // Return empty cleanup function
+    return () => { }; // Return empty cleanup function
   }, []);
 
   if (isLoading && !isRefreshing) {
@@ -337,11 +340,11 @@ export default function NotificationsScreen() {
       <SafeAreaView style={styles.container} edges={['right', 'left', 'bottom']}>
         {/* Hide the default header */}
         <Stack.Screen options={{ headerShown: false }} />
-        
+
         {/* Custom Header */}
         <View style={styles.customHeader}>
           <View style={styles.headerLeft}>
-            <Pressable 
+            <Pressable
               style={styles.backButton}
               onPress={() => router.back()}
             >
@@ -364,11 +367,11 @@ export default function NotificationsScreen() {
     <SafeAreaView style={styles.container} edges={['right', 'left', 'bottom']}>
       {/* Hide the default header */}
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       {/* Custom Header */}
       <View style={styles.customHeader}>
         <View style={styles.headerLeft}>
-          <Pressable 
+          <Pressable
             style={styles.backButton}
             onPress={() => router.back()}
           >
@@ -376,7 +379,7 @@ export default function NotificationsScreen() {
           </Pressable>
           <Text style={styles.headerTitle}>Notifications</Text>
         </View>
-        <Pressable 
+        <Pressable
           style={styles.headerAction}
           onPress={async () => {
             const unreadCount = notifications.filter(n => !n.read).length;
@@ -384,7 +387,7 @@ export default function NotificationsScreen() {
               try {
                 await notificationsApi.markAllAsRead();
                 // Update UI
-                setNotifications(prev => 
+                setNotifications(prev =>
                   prev.map(notif => ({ ...notif, read: true }))
                 );
               } catch (error) {
@@ -401,7 +404,7 @@ export default function NotificationsScreen() {
       </View>
       {/* Filter options */}
       <RNView style={styles.filterContainer}>
-        <ScrollView 
+        <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterScrollContent}
@@ -416,7 +419,7 @@ export default function NotificationsScreen() {
               ]}
               onPress={() => setFilter(option.key)}
             >
-              <Text 
+              <Text
                 style={[
                   styles.filterButtonText,
                   filter === option.key && styles.activeFilterButtonText,
@@ -433,7 +436,7 @@ export default function NotificationsScreen() {
       {error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable 
+          <Pressable
             style={[styles.retryButton, { backgroundColor: Colors[colorScheme ?? 'light'].tint }]}
             onPress={fetchNotifications}
           >
@@ -446,7 +449,7 @@ export default function NotificationsScreen() {
         <View style={styles.emptyContainer}>
           <FontAwesome name="bell-o" size={64} color="#CCCCCC" />
           <Text style={styles.emptyText}>
-            {filter 
+            {filter
               ? `No ${filter === 'unread' ? 'unread' : filter} notifications`
               : 'No notifications yet'
             }
@@ -455,7 +458,10 @@ export default function NotificationsScreen() {
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => {
+            // Ensure we always return a string by providing a fallback
+            return (item.id || item._id || `notification-${Math.random()}`).toString();
+          }}
           renderItem={renderNotificationItem}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={true}
