@@ -57,22 +57,45 @@ export default function HomeScreen() {
     interface CheckInStatusType {
       canCheckIn: boolean;
       nextCheckInTime?: Date;
+      notificationCreated?: boolean;
+      notificationId?: string;
     }
-
+  
     const loadCheckInStatus = async () => {
       try {
         const status = await checkInApi.getCheckInStatus();
-
+  
         // Update state
         setCheckInStatus(status);
-
+  
         // Detect transitions from cooldown to available
         const wasInCooldown = !prevCheckInStatusRef.current;
         const isNowAvailable = status.canCheckIn;
-
-        // If transitioning from cooldown to available, refresh notifications
+  
+        // If transitioning from cooldown to available, send a local notification
         if (wasInCooldown && isNowAvailable) {
           console.log('Check-in is now available after cooldown');
+          
+          // Import the notificationTracker
+          const { notificationTracker } = require('../../services/notificationTracker');
+          
+          // Only show notification if we haven't already shown one for this cycle
+          const hasShown = await notificationTracker.hasShownCheckInNotification();
+          if (!hasShown) {
+            // Create a local notification
+            await notificationService.sendLocalNotification(
+              'Check-In Available',
+              'Your next check-in is now available. How are you feeling today?',
+              { 
+                type: 'wellness',
+                actionable: true,
+                actionRoute: '/home/check_in'
+              }
+            );
+            
+            // Mark that we've shown a notification for this cycle
+            await notificationTracker.markCheckInNotificationShown();
+          }
           
           // Set flag to refresh notifications
           await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
@@ -84,20 +107,74 @@ export default function HomeScreen() {
             console.error('Error refreshing notifications:', error);
           }
         }
-
+  
         // Update the previous status ref for next comparison
         prevCheckInStatusRef.current = status.canCheckIn;
       } catch (error) {
         console.error('Error loading check-in status:', error);
       }
     };
-
+  
     // Load initial status
     loadCheckInStatus();
-
-    // Use a longer interval to reduce server load
-    const interval = setInterval(loadCheckInStatus, 2000);
-
+  
+    // Use a shorter interval of 15 seconds to be more responsive about status changes
+    const interval = setInterval(loadCheckInStatus, 15000);
+  
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Add this additional effect to check notifications on app focus
+  // But now with a cooldown to prevent duplicate notifications
+  useEffect(() => {
+    const checkNotifications = async () => {
+      try {
+        // Import the notificationTracker
+        const { notificationTracker } = require('../../services/notificationTracker');
+        
+        // Only check for notification status if we haven't shown one recently
+        const hasShown = await notificationTracker.hasShownCheckInNotification();
+        if (!hasShown) {
+          // Explicitly check if check-in is available
+          const result = await notificationsApi.checkForCheckInStatus();
+          if (result) {
+            console.log('Check-in is available, created local notification');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking notifications on focus:', error);
+      }
+    };
+  
+    // Initial check
+    checkNotifications();
+  
+    // Set up an interval to check every 5 minutes
+    const interval = setInterval(checkNotifications, 5 * 60 * 1000);
+  
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Add this additional effect to check notifications on app focus
+  useEffect(() => {
+    const checkNotifications = async () => {
+      try {
+        // Explicitly check if check-in is available
+        const result = await notificationsApi.checkForCheckInStatus();
+        if (result) {
+          console.log('Check-in is available, created local notification');
+        }
+      } catch (error) {
+        console.error('Error checking notifications on focus:', error);
+      }
+    };
+  
+    // Initial check
+    checkNotifications();
+  
+    // Set up an interval to check every 5 minutes
+    const interval = setInterval(checkNotifications, 5 * 60 * 1000);
+  
     return () => clearInterval(interval);
   }, []);
 

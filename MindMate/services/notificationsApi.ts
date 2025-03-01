@@ -1,6 +1,7 @@
 // services/notificationsApi.ts
 import * as SecureStore from 'expo-secure-store';
 import { getApiUrl } from './apiConfig';
+import { notificationService } from './notificationService';
 
 const API_URL = getApiUrl();
 
@@ -44,10 +45,17 @@ export const notificationsApi = {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/notifications`, { headers });
       if (!response.ok) {
-        throw new Error('Failed to fetch notifications');
+        throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
-      return response.json();
+      
+      const notifications = await response.json();
+      
+      // We no longer automatically trigger notifications when fetching the notification list
+      // This prevents duplicate notifications when opening the notifications screen
+      
+      return notifications;
     } catch (error) {
+      console.error('Failed to fetch notifications:', error);
       throw new NotificationsApiError(
         error instanceof Error ? error.message : 'Failed to fetch notifications'
       );
@@ -64,11 +72,29 @@ export const notificationsApi = {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to create notification');
+        throw new Error(`Failed to create notification: ${response.status}`);
       }
       
-      return response.json();
+      const createdNotification = await response.json();
+      
+      // If this is a check-in notification, create a local notification as well
+      if (notification.type === 'wellness' && notification.title.includes('Check-In')) {
+        await notificationService.sendLocalNotification(
+          notification.title,
+          notification.message,
+          {
+            type: notification.type,
+            actionable: notification.actionable,
+            actionRoute: notification.actionRoute,
+            actionParams: notification.actionParams,
+            notificationId: createdNotification.id || createdNotification._id
+          }
+        );
+      }
+      
+      return createdNotification;
     } catch (error) {
+      console.error('Failed to create notification:', error);
       throw new NotificationsApiError(
         error instanceof Error ? error.message : 'Failed to create notification'
       );
@@ -126,9 +152,10 @@ export const notificationsApi = {
         headers
       });
       if (!response.ok) {
-        throw new Error('Failed to mark all notifications as read');
+        throw new Error(`Failed to mark all notifications as read: ${response.status}`);
       }
     } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
       throw new NotificationsApiError(
         error instanceof Error ? error.message : 'Failed to mark all notifications as read'
       );
@@ -154,12 +181,58 @@ export const notificationsApi = {
         headers
       });
       if (!response.ok) {
-        throw new Error('Failed to delete notification');
+        throw new Error(`Failed to delete notification: ${response.status}`);
       }
     } catch (error) {
+      console.error('Failed to delete notification:', error);
       throw new NotificationsApiError(
         error instanceof Error ? error.message : 'Failed to delete notification'
       );
+    }
+  },
+  
+  async checkForCheckInStatus(): Promise<boolean> {
+    try {
+      // Import at the beginning of the function to avoid circular dependencies
+      const { notificationTracker } = require('./notificationTracker');
+      
+      // First check if we've already shown a notification for this cycle
+      const hasShown = await notificationTracker.hasShownCheckInNotification();
+      if (hasShown) {
+        console.log('Check-in notification already shown for this cycle, not showing again');
+        return false;
+      }
+      
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_URL}/check-in/status`, { headers });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get check-in status: ${response.status}`);
+      }
+      
+      const status = await response.json();
+      
+      // If check-in is available and we haven't shown a notification yet, create one
+      if (status.canCheckIn) {
+        await notificationService.sendLocalNotification(
+          'Check-In Available',
+          'Your next check-in is now available. How are you feeling today?',
+          {
+            type: 'wellness',
+            actionable: true,
+            actionRoute: '/home/check_in'
+          }
+        );
+        
+        // Mark that we've shown a notification for this cycle
+        await notificationTracker.markCheckInNotificationShown();
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Failed to check check-in status:', error);
+      return false;
     }
   }
 };

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import { AuthUser } from '../services/auth';
 import { notificationService } from '../services/notificationService';
 
@@ -22,34 +23,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const initializeApp = async () => {
-      await loadAuthState();
-      
-      // Initialize notification service when the app starts
       try {
+        // First, initialize the notification service
+        // This ensures we request permissions early
         console.log('Initializing notification service from AuthContext');
         await notificationService.initialize();
+
+        // Then load auth state
+        await loadAuthState();
         
-        // Set up notification handlers
-        const subscription = Notifications.addNotificationReceivedListener(notification => {
-          console.log('Notification received in foreground:', notification);
-        });
+        // Set up notification handlers AFTER we know the auth state
+        setupNotificationHandlers();
         
-        const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-          console.log('User tapped on notification:', response);
-          // Handle notification tap here
-        });
-        
-        return () => {
-          subscription.remove();
-          responseSubscription.remove();
-        };
+        // Check for any existing check-in notifications that might have been missed
+        await checkForExistingNotifications();
       } catch (error) {
-        console.error('Failed to initialize notification service:', error);
+        console.error('Failed to initialize app:', error);
+        setIsLoading(false);
       }
     };
     
     initializeApp();
   }, []);
+
+  // Setup notification handlers
+  const setupNotificationHandlers = () => {
+    // Configure notification handler
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+    
+    // Set up notification received handler
+    const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      console.log('Notification received in foreground:', notification);
+    });
+    
+    // Set up notification response handler
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('User tapped on notification:', response);
+      
+      // Extract route information from the notification data
+      const data = response.notification.request.content.data;
+      if (data && data.actionRoute) {
+        console.log('Navigating to:', data.actionRoute);
+        router.push(data.actionRoute as any);
+      }
+    });
+    
+    return () => {
+      receivedSubscription.remove();
+      responseSubscription.remove();
+    };
+  };
+
+  // Check for any existing check-in notifications
+  const checkForExistingNotifications = async () => {
+    if (!user) return;
+    
+    try {
+      // Set a flag to check notifications when the user navigates to the notifications screen
+      await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
+      
+      // Check if we should be in a check-in available state
+      const lastCheckInStr = await SecureStore.getItemAsync('lastCheckInTime');
+      const nextCheckInTimeStr = await SecureStore.getItemAsync('nextCheckInTime');
+      
+      if (lastCheckInStr && nextCheckInTimeStr) {
+        const now = new Date();
+        const nextCheckInTime = new Date(nextCheckInTimeStr);
+        
+        // If the next check-in time is in the past, we should have a notification
+        if (nextCheckInTime < now) {
+          console.log('Check-in should be available, creating local notification');
+          await notificationService.sendLocalNotification(
+            'Check-In Available',
+            'Your next check-in is now available. How are you feeling today?',
+            { 
+              type: 'wellness',
+              actionable: true,
+              actionRoute: '/home/check_in'
+            }
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for existing notifications:', error);
+    }
+  };
 
   useEffect(() => {
     if (isLoading) {
@@ -92,6 +156,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         SecureStore.setItemAsync('userData', JSON.stringify(userData))
       ]);
       setUser(userData);
+      
+      // After sign-in, re-initialize notification service to ensure token is registered
+      await notificationService.initialize();
+      await notificationService.registerForPushNotifications();
     } catch (error) {
       console.error('Error storing auth state:', error);
       throw error;

@@ -97,7 +97,40 @@ router.get('/status', authenticateToken, async (req: any, res) => {
     );
 
     if (!lastCheckIn) {
-      return res.json({ canCheckIn: true });
+      console.log('No previous check-in found, user can check in');
+      
+      // Create a notification that check-in is available
+      const { Notification } = require('../Database/NotificationSchema');
+      
+      // Find any existing "Check-In Available" notifications from the last 24 hours
+      const existingNotification = await Notification.findOne({
+        userId: req.userId,
+        type: 'wellness',
+        title: 'Check-In Available',
+        time: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      });
+      
+      // Only create a notification if one doesn't exist in the last 24 hours
+      if (!existingNotification) {
+        const notification = new Notification({
+          userId: req.userId,
+          type: 'wellness',
+          title: 'Check-In Available',
+          message: 'Your next check-in is now available. How are you feeling today?',
+          read: false,
+          time: new Date(),
+          actionable: true,
+          actionRoute: '/home/check_in'
+        });
+        
+        await notification.save();
+        console.log('Created initial check-in available notification');
+      }
+      
+      return res.json({ 
+        canCheckIn: true,
+        notificationCreated: !existingNotification
+      });
     }
 
     const now = new Date();
@@ -111,58 +144,17 @@ router.get('/status', authenticateToken, async (req: any, res) => {
       // User is in cooldown, cannot check in
       const nextCheckInTime = new Date(lastCheckIn.timestamp.getTime() + cooldownPeriod);
       
-      // DO NOT create a notification while in cooldown period unless approaching the end
-      // Only check if we're within the last 30 seconds of cooldown
-      const timeUntilAvailable = cooldownPeriod - timeSinceLastCheckIn;
-      const isApproachingAvailability = timeUntilAvailable < 30000; // 30 seconds
-      
-      if (isApproachingAvailability) {
-        const { Notification } = require('../Database/NotificationSchema');
-        const { DeviceToken } = require('../Database/DeviceTokenSchema');
-        
-        // Check if we already sent a notification for this cooldown period
-        const existingNotification = await Notification.findOne({
-          userId: req.userId,
-          type: 'wellness',
-          title: 'Check-In Available',
-          time: { $gt: lastCheckIn.timestamp }
-        });
-        
-        // Also check device metadata to see if we're in a cooldown period
-        const deviceWithCooldown = await DeviceToken.findOne({
-          userId: req.userId,
-          'metadata.checkInCooldown': true,
-          'metadata.lastCheckIn': { $gte: lastCheckIn.timestamp }
-        });
-        
-        // Only create notification if one doesn't exist and we're not in a cooldown
-        if (!existingNotification && !deviceWithCooldown) {
-          console.log('Creating check-in available notification (approaching availability)');
-          
-          // Schedule a notification for when the cooldown ends
-          const notification = new Notification({
-            userId: req.userId,
-            type: 'wellness',
-            title: 'Check-In Available Soon',
-            message: 'Your next check-in will be available in less than 30 seconds',
-            read: false,
-            time: now,
-            actionable: false
-          });
-          
-          await notification.save();
-          
-          // Update all device tokens to mark notification as sent
-          await DeviceToken.updateMany(
-            { userId: req.userId },
-            { 
-              $set: { 
-                'metadata.lastNotification': now 
-              }
-            }
-          );
+      // Update device metadata to indicate cooldown
+      const { DeviceToken } = require('../Database/DeviceTokenSchema');
+      await DeviceToken.updateMany(
+        { userId: req.userId },
+        { 
+          $set: { 
+            'metadata.checkInCooldown': true,
+            'metadata.lastCheckIn': lastCheckIn.timestamp
+          }
         }
-      }
+      );
       
       return res.json({
         canCheckIn: false,
@@ -172,23 +164,28 @@ router.get('/status', authenticateToken, async (req: any, res) => {
     
     // Cooldown is over, user can check in
     // When transitioning from cooldown to available, create a notification
-    const { DeviceToken } = require('../Database/DeviceTokenSchema');
+    console.log('Cooldown period is over, creating check-in available notification');
     
-    // Find any devices that still have the cooldown flag set
-    const devicesInCooldown = await DeviceToken.find({
+    const { DeviceToken } = require('../Database/DeviceTokenSchema');
+    const { Notification } = require('../Database/NotificationSchema');
+    
+    // Reset the cooldown flag for all user devices
+    await DeviceToken.updateMany(
+      { userId: req.userId },
+      { $set: { 'metadata.checkInCooldown': false } }
+    );
+    
+    // Find any existing unread Check-In Available notifications
+    const existingNotification = await Notification.findOne({
       userId: req.userId,
-      'metadata.checkInCooldown': true
+      type: 'wellness',
+      title: 'Check-In Available',
+      read: false
     });
     
-    if (devicesInCooldown.length > 0) {
-      // Reset the cooldown flag
-      await DeviceToken.updateMany(
-        { userId: req.userId },
-        { $set: { 'metadata.checkInCooldown': false } }
-      );
-      
+    // Only create a notification if one doesn't exist
+    if (!existingNotification) {
       // Create a notification that check-in is now available
-      const { Notification } = require('../Database/NotificationSchema');
       const notification = new Notification({
         userId: req.userId,
         type: 'wellness',
@@ -202,9 +199,18 @@ router.get('/status', authenticateToken, async (req: any, res) => {
       
       await notification.save();
       console.log('Created check-in available notification (cooldown ended)');
+      
+      res.json({ 
+        canCheckIn: true,
+        notificationCreated: true,
+        notificationId: notification._id
+      });
+    } else {
+      res.json({ 
+        canCheckIn: true,
+        notificationCreated: false
+      });
     }
-
-    res.json({ canCheckIn: true });
   } catch (error) {
     console.error('Get check-in status error:', error);
     res.status(500).json({ error: 'Failed to get check-in status' });
