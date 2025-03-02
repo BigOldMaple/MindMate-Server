@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
+import { initApiConfig, getApiConfig } from '@/services/apiConfig';
 
 // Prevent specific warnings from showing in development
 LogBox.ignoreLogs([
@@ -207,6 +208,7 @@ export default function RootLayout() {
     ...FontAwesome.font,
   });
   const [isReady, setIsReady] = useState(false);
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
 
   // Handle initialization errors
   useEffect(() => {
@@ -221,6 +223,19 @@ export default function RootLayout() {
     const initializeApp = async () => {
       try {
         if (loaded) {
+          // Import directly at the top of the file instead of dynamically
+          const { initApiConfig, getApiConfig } = require('@/services/apiConfig');
+          
+          // Fetch ngrok URL before doing anything else
+          await initApiConfig();
+          
+          // Get the API config to display (optional, for debugging)
+          const config = getApiConfig();
+          setApiUrl(config.baseUrl);
+          
+          console.log('API URL configured:', config.baseUrl);
+          console.log('WebSocket URL configured:', config.wsUrl);
+          
           // Request permissions
           await requestPermissions();
           setIsReady(true);
@@ -242,6 +257,21 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      {__DEV__ && apiUrl && (
+        <Text style={{
+          position: 'absolute',
+          bottom: 10,
+          left: 10,
+          right: 10,
+          fontSize: 10,
+          color: 'gray',
+          zIndex: 9999,
+          backgroundColor: 'rgba(255,255,255,0.7)',
+          padding: 5,
+        }}>
+          API URL: {apiUrl}
+        </Text>
+      )}
       <RootLayoutNav />
     </AuthProvider>
   );

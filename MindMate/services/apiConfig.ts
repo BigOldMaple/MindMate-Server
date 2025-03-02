@@ -10,27 +10,66 @@ const isNode = !isBrowser && typeof process !== 'undefined';
 
 // You can set this constant manually or it will be fetched from the server
 // This will be automatically updated when the server starts with ngrok
-const NGROK_URL: string | null = null; // Will be populated by ngrok service
+const NGROK_URL: string | null = 'https://0f1d-139-222-246-235.ngrok-free.app'; // Will be populated by ngrok service
 
 // Function to fetch ngrok URL from server config endpoint
 const fetchNgrokUrl = async (): Promise<{ url: string; wsUrl: string } | null> => {
   try {
-    // We need a base URL to fetch from - use development URL 
-    const developmentConfig = getDevelopmentApiConfig();
-    const response = await fetch(`${developmentConfig.baseUrl}/config/ngrok-url`);
+    console.log('Attempting to fetch ngrok URL from server');
     
-    if (!response.ok) {
-      console.warn('Failed to fetch ngrok URL from server');
+    // We need a base URL to fetch from - try multiple options
+    const developmentConfig = getDevelopmentApiConfig();
+    console.log('Trying base URL:', developmentConfig.baseUrl);
+    
+    // Try to get from multiple potential endpoints to increase chances of success
+    const endpoints = [
+      `${developmentConfig.baseUrl}/config/ngrok-url`,
+      'http://localhost:3000/api/config/ngrok-url',
+      'http://10.0.2.2:3000/api/config/ngrok-url'
+    ];
+    
+    let response = null;
+    let workingEndpoint = '';
+    
+    // Try each endpoint until one works
+    for (const endpoint of endpoints) {
+      try {
+        console.log('Trying endpoint:', endpoint);
+        // Use AbortController to implement timeout without using the unsupported timeout option
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        response = await fetch(endpoint, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          workingEndpoint = endpoint;
+          break;
+        }
+      } catch (error) {
+        // Handle the error with proper type checking
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.log(`Endpoint ${endpoint} failed:`, errorMessage);
+      }
+    }
+    
+    if (!response || !response.ok) {
+      console.warn('Failed to fetch ngrok URL from any endpoint');
       return null;
     }
     
+    console.log(`Successfully connected to ${workingEndpoint}`);
     const data = await response.json();
+    console.log('Received ngrok data:', data);
+    
     return {
       url: data.httpUrl,
       wsUrl: data.wsUrl
     };
   } catch (error) {
-    console.warn('Error fetching ngrok URL:', error);
+    // Handle the error with proper type checking
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn('Error fetching ngrok URL:', errorMessage);
     return null;
   }
 };
@@ -42,20 +81,6 @@ const getDevelopmentApiConfig = (): ApiConfig => {
       baseUrl: 'http://localhost:3000/api',
       wsUrl: 'ws://localhost:3000/ws'
     };
-  }
-
-  // For React Native environments
-  try {
-    const Platform = require('react-native').Platform;
-    // Android emulator needs special localhost handling
-    if (Platform.OS === 'android') {
-      return {
-        baseUrl: 'http://10.0.2.2:3000/api',
-        wsUrl: 'ws://10.0.2.2:3000/ws'
-      };
-    }
-  } catch (e) {
-    // If react-native import fails, assume we're in a web environment
   }
   
   // Default for iOS, web, and other environments
@@ -124,7 +149,19 @@ export const initApiConfig = async (): Promise<void> => {
 export const getApiConfig = (): ApiConfig => {
   // If we've fetched ngrok URL successfully, use that
   if (ngrokConfig) {
+    console.log('Using ngrok configuration');
     return ngrokConfig;
+  }
+  
+  // If NGROK_URL is manually specified, use that
+  if (NGROK_URL) {
+    console.log('Using manually specified ngrok URL');
+    const ngrokUrlString: string = NGROK_URL;
+    
+    return {
+      baseUrl: `${ngrokUrlString}/api`,
+      wsUrl: `${ngrokUrlString.replace('https://', 'wss://').replace('http://', 'ws://')}/ws`
+    };
   }
   
   // Otherwise use regular config
