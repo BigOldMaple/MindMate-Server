@@ -12,6 +12,31 @@ import buddyPeerRoutes from './routes/buddyPeer';
 import chatRoutes from './routes/chat';
 import checkInRoutes from './routes/checkIn';
 import notificationsRoutes from './routes/notifications';
+import ngrok from 'ngrok';
+
+async function startNgrok(port: number) {
+    try {
+        if (process.env.NGROK_AUTHTOKEN) {
+          await ngrok.authtoken(process.env.NGROK_AUTHTOKEN);
+        }
+        
+        const url = await ngrok.connect({
+          addr: port,
+          region: 'eu',
+        });
+      console.log('\nNgrok Tunnel Information:');
+      console.log('------------------------');
+      console.log(`Public URL: ${url}`);
+      console.log(`WebSocket URL: ${url.replace('https://', 'wss://')}/ws`);
+      console.log('Copy these URLs to your mobile app configuration.');
+      console.log('------------------------\n');
+      return url;
+    } catch (error) {
+      console.error('Error starting ngrok:', error);
+      return null;
+    }
+  }
+  
 
 const app = express();
 const server = http.createServer(app);
@@ -110,7 +135,7 @@ const startServer = async () => {
         }
 
         // Start server on all network interfaces
-        server.listen(port, '0.0.0.0', () => {
+        server.listen(port, '0.0.0.0', async () => {
             console.log('\nServer started successfully!');
             console.log('---------------------------');
             console.log(`Port: ${port}`);
@@ -126,6 +151,15 @@ const startServer = async () => {
             console.log('\nTest your connection:');
             console.log(`  - Health Check: http://139.222.246.207:${port}/health`);
             console.log('---------------------------\n');
+            
+            // Start ngrok after server is running
+            const ngrokUrl = await startNgrok(port);
+            if (ngrokUrl) {
+                console.log('\nCopy this code to your apiConfig.ts file:');
+                console.log('------------------------------------------');
+                console.log(`const NGROK_URL: string | null = '${ngrokUrl}';`);
+                console.log('------------------------------------------\n');
+            }
         });
 
     } catch (error) {
@@ -134,9 +168,18 @@ const startServer = async () => {
     }
 };
 
+
 // Graceful shutdown handling
 const shutdown = async () => {
     console.log('\nShutting down gracefully...');
+    
+    // Close ngrok
+    try {
+        await ngrok.kill();
+        console.log('Ngrok tunnel closed');
+    } catch (error) {
+        console.error('Error closing ngrok tunnel:', error);
+    }
     
     // Close WebSocket server first
     try {
@@ -166,6 +209,7 @@ const shutdown = async () => {
         process.exit(1);
     }, 10000);
 };
+
 
 // Error handling for uncaught exceptions
 process.on('uncaughtException', (error) => {
