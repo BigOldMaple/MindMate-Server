@@ -12,31 +12,8 @@ import buddyPeerRoutes from './routes/buddyPeer';
 import chatRoutes from './routes/chat';
 import checkInRoutes from './routes/checkIn';
 import notificationsRoutes from './routes/notifications';
-import ngrok from 'ngrok';
-
-async function startNgrok(port: number) {
-    try {
-        if (process.env.NGROK_AUTHTOKEN) {
-          await ngrok.authtoken(process.env.NGROK_AUTHTOKEN);
-        }
-        
-        const url = await ngrok.connect({
-          addr: port,
-          region: 'eu',
-        });
-      console.log('\nNgrok Tunnel Information:');
-      console.log('------------------------');
-      console.log(`Public URL: ${url}`);
-      console.log(`WebSocket URL: ${url.replace('https://', 'wss://')}/ws`);
-      console.log('Copy these URLs to your mobile app configuration.');
-      console.log('------------------------\n');
-      return url;
-    } catch (error) {
-      console.error('Error starting ngrok:', error);
-      return null;
-    }
-  }
-  
+import configRoutes from './routes/config'; // Add new config routes
+import { ngrokService } from './services/ngrokService'; // Import the ngrok service
 
 const app = express();
 const server = http.createServer(app);
@@ -92,6 +69,7 @@ app.use('/api/buddy-peer', buddyPeerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/check-in', checkInRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/config', configRoutes); // Add new config routes
 
 // Enhanced health check route with WebSocket info
 app.get('/health', (_req, res) => {
@@ -152,12 +130,20 @@ const startServer = async () => {
             console.log(`  - Health Check: http://139.222.246.207:${port}/health`);
             console.log('---------------------------\n');
             
-            // Start ngrok after server is running
-            const ngrokUrl = await startNgrok(port);
-            if (ngrokUrl) {
+            // Start ngrok tunnel using the service
+            const ngrokInfo = await ngrokService.startTunnel(port);
+            if (ngrokInfo) {
+                console.log('\nNgrok Tunnel Information:');
+                console.log('---------------------------');
+                console.log(`Public URL: ${ngrokInfo.url}`);
+                console.log(`WebSocket URL: ${ngrokInfo.wsUrl}/ws`);
+                console.log(`Health Check URL: ${ngrokInfo.url}/health`);
+                console.log('Copy these URLs to your mobile app configuration.');
+                console.log('---------------------------\n');
+                
                 console.log('\nCopy this code to your apiConfig.ts file:');
                 console.log('------------------------------------------');
-                console.log(`const NGROK_URL: string | null = '${ngrokUrl}';`);
+                console.log(`const NGROK_URL: string | null = '${ngrokInfo.url}';`);
                 console.log('------------------------------------------\n');
             }
         });
@@ -168,14 +154,13 @@ const startServer = async () => {
     }
 };
 
-
 // Graceful shutdown handling
 const shutdown = async () => {
     console.log('\nShutting down gracefully...');
     
-    // Close ngrok
+    // Close ngrok using the service
     try {
-        await ngrok.kill();
+        await ngrokService.stopTunnel();
         console.log('Ngrok tunnel closed');
     } catch (error) {
         console.error('Error closing ngrok tunnel:', error);
@@ -209,7 +194,6 @@ const shutdown = async () => {
         process.exit(1);
     }, 10000);
 };
-
 
 // Error handling for uncaught exceptions
 process.on('uncaughtException', (error) => {
