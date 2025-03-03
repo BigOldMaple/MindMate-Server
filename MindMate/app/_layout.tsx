@@ -12,7 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import { initApiConfig, getApiConfig } from '@/services/apiConfig';
+import { registerBackgroundStepTracking } from '@/services/backgroundStepService';
 
 // Prevent specific warnings from showing in development
 LogBox.ignoreLogs([
@@ -55,10 +55,10 @@ const requestPermissions = async () => {
     // Initialize sensors
     await Accelerometer.setUpdateInterval(1000);
     await Gyroscope.setUpdateInterval(1000);
-    
+
     // Start sensors to trigger Android permission dialog if needed
-    const accelerometerSubscription = Accelerometer.addListener(() => {});
-    const gyroscopeSubscription = Gyroscope.addListener(() => {});
+    const accelerometerSubscription = Accelerometer.addListener(() => { });
+    const gyroscopeSubscription = Gyroscope.addListener(() => { });
 
     // Clean up sensor listeners
     accelerometerSubscription.remove();
@@ -130,8 +130,8 @@ function RootLayoutNav() {
               fontWeight: 'bold',
             },
             headerLeft: () => (
-              <Pressable 
-                onPress={() => router.back()} 
+              <Pressable
+                onPress={() => router.back()}
                 style={({ pressed }) => [
                   styles.headerButton,
                   pressed && styles.headerButtonPressed
@@ -225,17 +225,17 @@ export default function RootLayout() {
         if (loaded) {
           // Import directly at the top of the file instead of dynamically
           const { initApiConfig, getApiConfig } = require('@/services/apiConfig');
-          
+
           // Fetch ngrok URL before doing anything else
           await initApiConfig();
-          
+
           // Get the API config to display (optional, for debugging)
           const config = getApiConfig();
           setApiUrl(config.baseUrl);
-          
+
           console.log('API URL configured:', config.baseUrl);
           console.log('WebSocket URL configured:', config.wsUrl);
-          
+
           // Request permissions
           await requestPermissions();
           setIsReady(true);
@@ -246,6 +246,9 @@ export default function RootLayout() {
         setIsReady(true); // Continue anyway to avoid app being stuck
         await SplashScreen.hideAsync();
       }
+
+      // Register background step tracking
+      await registerBackgroundStepTracking();
     };
 
     initializeApp();
