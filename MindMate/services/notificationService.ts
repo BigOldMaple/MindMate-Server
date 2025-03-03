@@ -121,39 +121,31 @@ export class NotificationService {
         console.log('Push notifications are not available in the simulator');
         return false;
       }
-
-      // Get push token
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: 'd52910f2-c495-4709-a25a-9d800ff3e91d', // Use the exact project ID from app.json
-      });
-      
-      this.pushToken = token.data;
-
-      // Store token locally
-      await SecureStore.setItemAsync('pushToken', token.data);
-      
-      // Try up to 3 times to send the token to server with exponential backoff
-      let attempt = 0;
-      let success = false;
-      
-      while (attempt < 3 && !success) {
-        try {
-          success = await this.sendPushTokenToServer(token.data);
-        } catch (err) {
-          console.error(`Error sending push token (attempt ${attempt+1}/3):`, err);
-        }
-        
-        if (!success) {
-          // Wait with exponential backoff before retry
-          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-          await new Promise(resolve => setTimeout(resolve, delay));
-          attempt++;
-        }
+  
+      // Skip FCM token registration on Android since we're not using Firebase
+      if (Platform.OS === 'android') {
+        console.log('FCM push notifications disabled - using local notifications only');
+        // We'll rely only on local notifications
+        return true;
       }
-      
-      return success;
+  
+      // For iOS, still try to get a token
+      try {
+        const token = await Notifications.getExpoPushTokenAsync({
+          projectId: 'd52910f2-c495-4709-a25a-9d800ff3e91d',
+        });
+        
+        this.pushToken = token.data;
+        await SecureStore.setItemAsync('pushToken', token.data);
+        
+        // Only try to send token to server on iOS
+        return await this.sendPushTokenToServer(token.data);
+      } catch (tokenError) {
+        console.log('Error getting push token, falling back to local notifications only:', tokenError);
+        return true; // Return true so the app continues
+      }
     } catch (error) {
-      console.error('Error registering for push notifications:', error);
+      console.error('Error in registerForPushNotifications:', error);
       return false;
     }
   }
