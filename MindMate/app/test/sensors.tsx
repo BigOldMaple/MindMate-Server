@@ -28,6 +28,7 @@ export default function SensorTest() {
   const stepUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     let accelerometerSubscription: ReturnType<typeof Accelerometer.addListener> | null = null;
     let gyroscopeSubscription: ReturnType<typeof Gyroscope.addListener> | null = null;
 
@@ -69,17 +70,18 @@ export default function SensorTest() {
         }
       } catch (error) {
         console.error('Sensor setup error:', error);
-        Alert.alert(
-          'Sensor Error',
-          'Failed to initialize sensors. Please ensure you have granted the necessary permissions.'
-        );
+        if (isMounted) {
+          Alert.alert('Sensor Error', 'Failed to initialize sensors.');
+        }
       }
     };
-
-    setupSensors();
-
-    // Cleanup subscriptions when component unmounts or loses focus
+  
+    if (isFocused) {
+      setupSensors();
+    }
+  
     return () => {
+      isMounted = false;
       if (accelerometerSubscription) {
         accelerometerSubscription.remove();
       }
@@ -93,34 +95,53 @@ export default function SensorTest() {
   }, [isFocused]);
 
   const fetchStepData = async () => {
+    if (!isHealthConnectAvailable) {
+      console.log('Skipping step data fetch: Health Connect not available');
+      return;
+    }
+  
+    let isMounted = true; // Track if component is still mounted
+  
     try {
       setIsLoadingSteps(true);
       const steps = await healthConnectService.getTodayStepCount();
-      setDailyStepCount(steps);
-      setLastUpdated(new Date());
+      if (isMounted) {
+        setDailyStepCount(steps);
+        setLastUpdated(new Date());
+      }
     } catch (error) {
-      console.error('Error fetching step data:', error);
+      console.error('Error in fetchStepData:', error);
+      if (isMounted) {
+        Alert.alert('Error', 'Failed to fetch step data. Please try again.');
+      }
     } finally {
-      setIsLoadingSteps(false);
+      if (isMounted) {
+        setIsLoadingSteps(false);
+      }
     }
+  
+    // Cleanup to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
   };
-
   const handleInstallHealthConnect = async () => {
     try {
-      // This will open Health Connect settings or direct to Play Store
       await healthConnectService.openHealthConnectSettings();
       
       // Check availability again after potential installation
       setTimeout(async () => {
         const available = await healthConnectService.initialize();
+        console.log('Health Connect availability after install attempt:', available);
         setIsHealthConnectAvailable(available);
         if (available) {
-          fetchStepData();
+          await fetchStepData();
+        } else {
+          Alert.alert('Error', 'Health Connect is still not available. Please ensure it is installed and configured.');
         }
-      }, 1000);
+      }, 2000); // Increased delay to give user time to install
     } catch (error) {
       console.error('Error opening Health Connect settings:', error);
-      // Fallback - open Play Store directly
       Linking.openURL('market://details?id=com.google.android.apps.healthdata');
     }
   };

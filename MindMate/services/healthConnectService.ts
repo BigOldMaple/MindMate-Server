@@ -18,18 +18,22 @@ export class HealthConnectService {
    * Initialize Health Connect and check if it's available on the device
    */
   async initialize(): Promise<boolean> {
-    if (this.isInitialized) return this.isAvailable;
-
+    if (this.isInitialized) {
+      console.log('Health Connect already initialized, availability:', this.isAvailable);
+      return this.isAvailable;
+    }
+  
+    console.log('Initializing Health Connect...');
     try {
-      // Check if Health Connect is available
       const isAvailable = await HealthConnect.initialize();
+      console.log('Health Connect initialized successfully:', isAvailable);
       this.isAvailable = isAvailable;
       this.isInitialized = true;
-      
-      console.log('Health Connect availability:', isAvailable);
       return isAvailable;
     } catch (error) {
       console.error('Error initializing Health Connect:', error);
+      this.isAvailable = false;
+      this.isInitialized = true;
       return false;
     }
   }
@@ -38,21 +42,30 @@ export class HealthConnectService {
    * Request permission to access step count data
    */
   async requestStepCountPermission(): Promise<boolean> {
-    if (!this.isAvailable) {
-      const available = await this.initialize();
-      if (!available) return false;
+    console.log('Starting requestStepCountPermission...');
+  
+    if (!this.isInitialized) {
+      console.log('Health Connect not initialized, initializing now...');
+      await this.initialize();
     }
-
+  
+    if (!this.isAvailable) {
+      console.warn('Health Connect not available after initialization');
+      return false;
+    }
+  
+    // Add a small delay to ensure the native module is ready
+    await new Promise(resolve => setTimeout(resolve, 500));
+  
     try {
-      // Request permission for reading step data
+      console.log('Calling HealthConnect.requestPermission...');
       const permissions = await HealthConnect.requestPermission([
-        { accessType: 'read', recordType: 'Steps' }
+        { accessType: 'read', recordType: 'Steps' },
       ]);
-      
-      // Check if we received the permission by seeing if any were granted
+      console.log('Permissions response:', permissions);
       return permissions.length > 0;
     } catch (error) {
-      console.error('Error requesting Health Connect permissions:', error);
+      console.error('Error in requestStepCountPermission:', error);
       return false;
     }
   }
@@ -61,50 +74,52 @@ export class HealthConnectService {
    * Get the total step count for today
    */
   async getTodayStepCount(): Promise<number> {
+    console.log('Starting getTodayStepCount...');
+  
     if (!this.isAvailable) {
+      console.log('Health Connect not available, attempting to initialize...');
       const available = await this.initialize();
-      if (!available) return 0;
+      if (!available) {
+        console.warn('Health Connect not available after initialization');
+        return 0;
+      }
     }
-
+  
     try {
-      // Make sure we have permission
+      console.log('Requesting step count permission...');
       const hasPermission = await this.requestStepCountPermission();
       if (!hasPermission) {
         console.warn('No permission to access step count data');
         return 0;
       }
-
-      // Create time range for today (midnight to now)
+  
+      console.log('Creating time range for today...');
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
-      // Read step count records using the correct function signature
+  
+      console.log('Reading step count records...');
       const stepsResult = await HealthConnect.readRecords('Steps', {
         timeRangeFilter: {
           operator: 'between',
           startTime: today.toISOString(),
-          endTime: new Date().toISOString()
-        }
+          endTime: new Date().toISOString(),
+        },
       });
-
-      // Sum up all step counts from the result
+  
+      console.log('Steps result:', JSON.stringify(stepsResult));
+  
       let totalSteps = 0;
-      
-      // Safely process the records
-      if (stepsResult && stepsResult.records && Array.isArray(stepsResult.records)) {
-        for (const record of stepsResult.records) {
-          // We need to use a type guard to safely access properties
-          if (record && typeof record === 'object' && 'count' in record) {
-            totalSteps += Number(record.count) || 0;
-          }
-        }
+      if (stepsResult?.records?.length > 0) {
+        totalSteps = stepsResult.records.reduce((sum, record) => {
+          return sum + (Number(record.count) || 0);
+        }, 0);
       }
-
-      console.log('Retrieved daily step count:', totalSteps);
+  
+      console.log('Total steps calculated:', totalSteps);
       return totalSteps;
     } catch (error) {
-      console.error('Error getting daily step count:', error);
-      return 0;
+      console.error('Error in getTodayStepCount:', error);
+      throw error; // Re-throw to let fetchStepData handle it
     }
   }
 
