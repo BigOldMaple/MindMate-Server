@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, Alert, ScrollView, Button } from 'react-native';
-import { Accelerometer, Gyroscope, Pedometer } from 'expo-sensors';
+import { StyleSheet, View, Text, Alert, ScrollView, Button, Platform, Linking } from 'react-native';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useIsFocused } from '@react-navigation/native';
+import { healthConnectService } from '@/services/healthConnectService';
 
 type SensorData = {
   x: number;
@@ -11,25 +12,20 @@ type SensorData = {
 
 export default function SensorTest() {
   const [accelerometerData, setAccelerometerData] = useState<SensorData>({ 
-    x: 0, 
-    y: 0, 
-    z: 0 
+    x: 0, y: 0, z: 0 
   });
   const [gyroscopeData, setGyroscopeData] = useState<SensorData>({ 
-    x: 0, 
-    y: 0, 
-    z: 0 
+    x: 0, y: 0, z: 0 
   });
   const [accelerometerAvailable, setAccelerometerAvailable] = useState<boolean>(true);
   const [gyroscopeAvailable, setGyroscopeAvailable] = useState<boolean>(true);
-  const [isPedometerAvailable, setIsPedometerAvailable] = useState<boolean>(false);
-  const [currentStepCount, setCurrentStepCount] = useState<number>(0);
-  const [pastStepCount, setPastStepCount] = useState<number>(0);
-  const [isTrackingSteps, setIsTrackingSteps] = useState<boolean>(false);
+  const [isHealthConnectAvailable, setIsHealthConnectAvailable] = useState<boolean>(false);
+  const [dailyStepCount, setDailyStepCount] = useState<number>(0);
+  const [isLoadingSteps, setIsLoadingSteps] = useState<boolean>(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
   const isFocused = useIsFocused();
-  const pedometerSubscription = useRef<{ remove: () => void } | null>(null);
-  const pastStepCheckInterval = useRef<NodeJS.Timeout | null>(null);
+  const stepUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     let accelerometerSubscription: ReturnType<typeof Accelerometer.addListener> | null = null;
@@ -37,50 +33,46 @@ export default function SensorTest() {
 
     const setupSensors = async () => {
       try {
-        // Check accelerometer availability
+        // Check accelerometer and gyroscope availability
         const accelerometerIsAvailable = await Accelerometer.isAvailableAsync();
         setAccelerometerAvailable(accelerometerIsAvailable);
 
-        // Check gyroscope availability
         const gyroscopeIsAvailable = await Gyroscope.isAvailableAsync();
         setGyroscopeAvailable(gyroscopeIsAvailable);
         
-        // Check pedometer availability
-        const pedometerIsAvailable = await Pedometer.isAvailableAsync();
-        setIsPedometerAvailable(pedometerIsAvailable);
+        // Initialize Health Connect
+        const healthConnectAvailable = await healthConnectService.initialize();
+        setIsHealthConnectAvailable(healthConnectAvailable);
 
         if (isFocused) {
           if (accelerometerIsAvailable) {
-            // Configure update interval (in milliseconds)
             Accelerometer.setUpdateInterval(100);
-
-            // Start accelerometer subscription
             accelerometerSubscription = Accelerometer.addListener(data => {
               setAccelerometerData(data);
             });
           }
 
           if (gyroscopeIsAvailable) {
-            // Configure update interval (in milliseconds)
             Gyroscope.setUpdateInterval(100);
-
-            // Start gyroscope subscription
             gyroscopeSubscription = Gyroscope.addListener(data => {
               setGyroscopeData(data);
             });
           }
           
-          if (pedometerIsAvailable) {
-            // Start tracking steps if available
-            startStepTracking();
+          if (healthConnectAvailable) {
+            // Immediately fetch step data
+            await fetchStepData();
+            
+            // Set up interval to update step data every 30 seconds
+            stepUpdateInterval.current = setInterval(fetchStepData, 30000);
           }
         }
       } catch (error) {
+        console.error('Sensor setup error:', error);
         Alert.alert(
           'Sensor Error',
           'Failed to initialize sensors. Please ensure you have granted the necessary permissions.'
         );
-        console.error('Sensor setup error:', error);
       }
     };
 
@@ -94,81 +86,52 @@ export default function SensorTest() {
       if (gyroscopeSubscription) {
         gyroscopeSubscription.remove();
       }
-      stopStepTracking();
+      if (stepUpdateInterval.current) {
+        clearInterval(stepUpdateInterval.current);
+      }
     };
   }, [isFocused]);
 
-  const startStepTracking = async () => {
+  const fetchStepData = async () => {
     try {
-      // Start listening for step count updates
-      pedometerSubscription.current = Pedometer.watchStepCount(result => {
-        setCurrentStepCount(result.steps);
-      });
-      
-      // Set up periodic check for past 10 minutes steps
-      updatePastStepCount();
-      
-      // Check past steps every minute
-      pastStepCheckInterval.current = setInterval(() => {
-        updatePastStepCount();
-      }, 60000); // Check every minute
-      
-      setIsTrackingSteps(true);
+      setIsLoadingSteps(true);
+      const steps = await healthConnectService.getTodayStepCount();
+      setDailyStepCount(steps);
+      setLastUpdated(new Date());
     } catch (error) {
-      console.error('Failed to start step tracking:', error);
-      Alert.alert('Step Tracking Error', 'Failed to start step tracking');
+      console.error('Error fetching step data:', error);
+    } finally {
+      setIsLoadingSteps(false);
     }
   };
-  
-  const stopStepTracking = () => {
-    // Clean up pedometer subscription
-    if (pedometerSubscription.current) {
-      pedometerSubscription.current.remove();
-      pedometerSubscription.current = null;
-    }
-    
-    // Clear interval
-    if (pastStepCheckInterval.current) {
-      clearInterval(pastStepCheckInterval.current);
-      pastStepCheckInterval.current = null;
-    }
-    
-    setIsTrackingSteps(false);
-  };
-  
-  const updatePastStepCount = async () => {
+
+  const handleInstallHealthConnect = async () => {
     try {
-      // Calculate time range for past 10 minutes
-      const end = new Date();
-      const start = new Date(end.getTime() - 10 * 60 * 1000); // 10 minutes ago
+      // This will open Health Connect settings or direct to Play Store
+      await healthConnectService.openHealthConnectSettings();
       
-      // Request step count for the past 10 minutes
-      const pastSteps = await Pedometer.getStepCountAsync(start, end);
-      
-      console.log(`Steps in past 10 minutes: ${pastSteps.steps}`);
-      setPastStepCount(pastSteps.steps);
+      // Check availability again after potential installation
+      setTimeout(async () => {
+        const available = await healthConnectService.initialize();
+        setIsHealthConnectAvailable(available);
+        if (available) {
+          fetchStepData();
+        }
+      }, 1000);
     } catch (error) {
-      console.error('Error getting past step count:', error);
+      console.error('Error opening Health Connect settings:', error);
+      // Fallback - open Play Store directly
+      Linking.openURL('market://details?id=com.google.android.apps.healthdata');
     }
   };
 
   const round = (n: number) => Math.round(n * 100) / 100;
 
-  if (!accelerometerAvailable && !gyroscopeAvailable && !isPedometerAvailable) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Sensors Unavailable</Text>
-        <Text style={styles.errorText}>
-          Your device does not support the required sensors.
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Sensor Test</Text>
       
+      {/* Accelerometer and Gyroscope sections */}
       {accelerometerAvailable && (
         <View style={styles.sensorContainer}>
           <Text style={styles.sensorTitle}>Accelerometer:</Text>
@@ -191,55 +154,38 @@ export default function SensorTest() {
         </View>
       )}
       
-      {isPedometerAvailable && (
-        <View style={styles.sensorContainer}>
-          <Text style={styles.sensorTitle}>Pedometer:</Text>
-          {isTrackingSteps ? (
-            <>
-              <Text style={styles.sensorText}>
-                Current Session Steps: {currentStepCount}{'\n'}
-                Steps in past 10 minutes: {pastStepCount}
-              </Text>
-              <View style={styles.buttonContainer}>
-                <Button 
-                  title="Refresh 10-min History" 
-                  onPress={updatePastStepCount}
-                  color="#2196F3" 
-                />
-                <Button 
-                  title="Stop Tracking" 
-                  onPress={stopStepTracking}
-                  color="#FF3B30" 
-                />
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.sensorText}>
-                Step tracking is currently disabled.
-              </Text>
-              <Button 
-                title="Start Step Tracking" 
-                onPress={startStepTracking}
-                color="#4CAF50" 
-              />
-            </>
-          )}
-        </View>
-      )}
-      
-      {!isPedometerAvailable && (
-        <View style={styles.sensorContainer}>
-          <Text style={styles.sensorTitle}>Pedometer:</Text>
-          <Text style={styles.errorText}>
-            Pedometer is not available on this device or permission is denied.
-          </Text>
-        </View>
-      )}
+      {/* Health Connect Section */}
+      <View style={styles.sensorContainer}>
+        <Text style={styles.sensorTitle}>Health Connect Steps:</Text>
+        {isHealthConnectAvailable ? (
+          <>
+            <Text style={styles.sensorText}>
+              Today's Steps: {dailyStepCount}
+              {lastUpdated && `\nLast Updated: ${lastUpdated.toLocaleTimeString()}`}
+            </Text>
+            <Button 
+              title={isLoadingSteps ? "Updating..." : "Refresh Step Count"} 
+              onPress={fetchStepData}
+              disabled={isLoadingSteps}
+              color="#2196F3"
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.errorText}>
+              Health Connect is not available on this device. You may need to install the Health Connect app from the Google Play Store.
+            </Text>
+            <Button 
+              title="Install Health Connect" 
+              onPress={handleInstallHealthConnect}
+              color="#4CAF50"
+            />
+          </>
+        )}
+      </View>
     </ScrollView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
