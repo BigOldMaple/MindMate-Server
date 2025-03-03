@@ -25,6 +25,9 @@ export class HealthConnectService {
   
     console.log('Initializing Health Connect...');
     try {
+      // Wait a moment to ensure Activity is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const isAvailable = await HealthConnect.initialize();
       console.log('Health Connect initialized successfully:', isAvailable);
       this.isAvailable = isAvailable;
@@ -44,26 +47,34 @@ export class HealthConnectService {
   async requestStepCountPermission(): Promise<boolean> {
     console.log('Starting requestStepCountPermission...');
   
-    if (!this.isInitialized) {
-      console.log('Health Connect not initialized, initializing now...');
-      await this.initialize();
+    // Make sure Health Connect is initialized first
+    if (!this.isInitialized || !this.isAvailable) {
+      console.log('Health Connect not fully initialized, initializing now...');
+      const available = await this.initialize();
+      if (!available) {
+        console.warn('Health Connect not available after initialization');
+        return false;
+      }
     }
   
-    if (!this.isAvailable) {
-      console.warn('Health Connect not available after initialization');
-      return false;
-    }
-  
-    // Add a small delay to ensure the native module is ready
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Add a delay to ensure the native module is ready
+    await new Promise(resolve => setTimeout(resolve, 1000));
   
     try {
       console.log('Calling HealthConnect.requestPermission...');
-      const permissions = await HealthConnect.requestPermission([
-        { accessType: 'read', recordType: 'Steps' },
-      ]);
-      console.log('Permissions response:', permissions);
-      return permissions.length > 0;
+      
+      // Wrap the permission request in a try/catch to prevent crashes
+      try {
+        const permissions = await HealthConnect.requestPermission([
+          { accessType: 'read', recordType: 'Steps' },
+        ]);
+        console.log('Permissions response:', permissions);
+        return permissions.length > 0;
+      } catch (permissionError) {
+        console.error('Permission request failed:', permissionError);
+        // Return false instead of crashing
+        return false;
+      }
     } catch (error) {
       console.error('Error in requestStepCountPermission:', error);
       return false;

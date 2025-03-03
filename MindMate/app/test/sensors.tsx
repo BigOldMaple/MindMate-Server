@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, Alert, ScrollView, Button, Platform, Linking } from 'react-native';
+import { StyleSheet, View, Text, Alert, ScrollView, Button, Linking } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useIsFocused } from '@react-navigation/native';
 import { healthConnectService } from '@/services/healthConnectService';
@@ -104,10 +104,35 @@ export default function SensorTest() {
   
     try {
       setIsLoadingSteps(true);
-      const steps = await healthConnectService.getTodayStepCount();
-      if (isMounted) {
-        setDailyStepCount(steps);
-        setLastUpdated(new Date());
+      
+      // First check and request permissions if needed
+      try {
+        const hasPermission = await healthConnectService.requestStepCountPermission();
+        if (!hasPermission) {
+          console.log('Step count permission denied');
+          if (isMounted) {
+            setDailyStepCount(0);
+            setLastUpdated(new Date());
+          }
+          return;
+        }
+      } catch (permissionError) {
+        console.error('Error requesting permissions:', permissionError);
+        // Continue anyway to handle the error gracefully
+      }
+      
+      // Now try to get the step count
+      try {
+        const steps = await healthConnectService.getTodayStepCount();
+        if (isMounted) {
+          setDailyStepCount(steps);
+          setLastUpdated(new Date());
+        }
+      } catch (stepError) {
+        console.error('Error fetching step data:', stepError);
+        if (isMounted) {
+          Alert.alert('Error', 'Failed to fetch step data. Please try again.');
+        }
       }
     } catch (error) {
       console.error('Error in fetchStepData:', error);
