@@ -2,7 +2,7 @@
   "expo": {
     "name": "MindMate",
     "slug": "MindMate",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -38,8 +38,7 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.WAKE_LOCK",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.health.READ_STEPS",
-        "android.permission.health.WRITE_STEPS"
+        "android.permission.ACTIVITY_RECOGNITION"
       ]
     },
     "plugins": [

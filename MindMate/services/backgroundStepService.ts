@@ -12,9 +12,6 @@ TaskManager.defineTask(STEP_TRACKING_TASK, async () => {
     const isAvailable = await stepService.setup();
     if (!isAvailable) return BackgroundFetch.BackgroundFetchResult.NoData;
     
-    const hasPermission = await stepService.requestPermission();
-    if (!hasPermission) return BackgroundFetch.BackgroundFetchResult.NoData;
-    
     const steps = await stepService.getTodaySteps();
     
     // Store steps count for app to use when opened
@@ -30,12 +27,15 @@ TaskManager.defineTask(STEP_TRACKING_TASK, async () => {
 
 export const registerBackgroundStepTracking = async () => {
   try {
-    await BackgroundFetch.registerTaskAsync(STEP_TRACKING_TASK, {
-      minimumInterval: 15, // 15 minutes
-      stopOnTerminate: false,
-      startOnBoot: true,
-    });
-    console.log('Step tracking registered in background');
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(STEP_TRACKING_TASK);
+    if (!isRegistered) {
+      await BackgroundFetch.registerTaskAsync(STEP_TRACKING_TASK, {
+        minimumInterval: 15, // 15 minutes
+        stopOnTerminate: false,
+        startOnBoot: true,
+      });
+      console.log('Step tracking registered in background');
+    }
     return true;
   } catch (error) {
     console.error('Failed to register background step tracking:', error);

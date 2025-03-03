@@ -2,9 +2,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 import { AuthUser } from '../services/auth';
 import { notificationService } from '../services/notificationService';
+import { Platform, Alert } from 'react-native';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -24,18 +24,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // First, initialize the notification service
-        // This ensures we request permissions early
-        console.log('Initializing notification service from AuthContext');
+        // First, check and request permissions
+        const { SensorPermissions } = require('../utils/sensorPermissions');
+        const permissionsGranted = await SensorPermissions.requestRequiredPermissions();
+        
+        if (!permissionsGranted) {
+          console.warn('Not all permissions were granted');
+          // Show a more detailed explanation to the user about required permissions
+          Alert.alert(
+            "Important Permissions Required",
+            "MindMate needs access to certain device features to function properly. Please grant the requested permissions to get the full experience.",
+            [{ text: "OK" }]
+          );
+        }
+        
+        // Initialize notification service
         await notificationService.initialize();
-
-        // Then load auth state
+        
+        // Load auth state
         await loadAuthState();
         
-        // Set up notification handlers AFTER we know the auth state
+        // Set up notification handlers
         setupNotificationHandlers();
         
-        // Check for any existing check-in notifications that might have been missed
+        // Check for existing notifications
         await checkForExistingNotifications();
       } catch (error) {
         console.error('Failed to initialize app:', error);

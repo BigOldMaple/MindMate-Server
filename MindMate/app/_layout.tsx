@@ -6,13 +6,17 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { Pressable, Text, StyleSheet, LogBox, AppState, AppStateStatus } from 'react-native';
+import { Pressable, Text, StyleSheet, LogBox, AppState, AppStateStatus, Alert } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
-import { Accelerometer, Gyroscope } from 'expo-sensors';
+import { Accelerometer, Gyroscope, Pedometer } from 'expo-sensors';
 import { registerBackgroundStepTracking } from '@/services/backgroundStepService';
+
+import { Camera } from 'expo-camera';
+import * as MediaLibrary from 'expo-media-library';
+import * as Audio from 'expo-av';
 
 // Prevent specific warnings from showing in development
 LogBox.ignoreLogs([
@@ -46,34 +50,50 @@ const currentDate = new Date().toLocaleDateString('en-GB', {
 // Permission handler utility
 const requestPermissions = async () => {
   try {
-    // Request location and notification permissions
-    const [locationPermission, notificationPermission] = await Promise.all([
+    // Request permissions concurrently for better UX
+    const [
+      locationPermission, 
+      notificationPermission,
+      cameraPermission,
+      mediaLibraryPermission,
+      microphonePermission,
+      pedometerPermission
+    ] = await Promise.all([
       Location.requestForegroundPermissionsAsync(),
       Notifications.requestPermissionsAsync(),
+      Camera.requestCameraPermissionsAsync(),
+      MediaLibrary.requestPermissionsAsync(),
+      Audio.Audio.requestPermissionsAsync(),
+      Pedometer.isAvailableAsync() // Check if pedometer is available instead of using Health Connect
     ]);
 
-    // Initialize sensors
+    // Initialize sensors to trigger Android permission dialog if needed
     await Accelerometer.setUpdateInterval(1000);
     await Gyroscope.setUpdateInterval(1000);
-
-    // Start sensors to trigger Android permission dialog if needed
-    const accelerometerSubscription = Accelerometer.addListener(() => { });
-    const gyroscopeSubscription = Gyroscope.addListener(() => { });
-
-    // Clean up sensor listeners
+    const accelerometerSubscription = Accelerometer.addListener(() => {});
+    const gyroscopeSubscription = Gyroscope.addListener(() => {});
     accelerometerSubscription.remove();
     gyroscopeSubscription.remove();
 
+    // Return comprehensive permission status
     return {
       location: locationPermission.status === 'granted',
       notification: notificationPermission.status === 'granted',
-      sensors: true // Sensors don't have a permission API, they trigger system dialog when used
+      camera: cameraPermission.status === 'granted',
+      mediaLibrary: mediaLibraryPermission.status === 'granted',
+      microphone: microphonePermission.status === 'granted',
+      physicalActivity: pedometerPermission, // Use pedometer availability instead of Health Connect
+      sensors: true 
     };
   } catch (error) {
     console.error('Error requesting permissions:', error);
     return {
       location: false,
       notification: false,
+      camera: false,
+      mediaLibrary: false,
+      microphone: false,
+      physicalActivity: false,
       sensors: false
     };
   }
@@ -223,34 +243,52 @@ export default function RootLayout() {
     const initializeApp = async () => {
       try {
         if (loaded) {
-          // Import directly at the top of the file instead of dynamically
           const { initApiConfig, getApiConfig } = require('@/services/apiConfig');
-
-          // Fetch ngrok URL before doing anything else
           await initApiConfig();
-
-          // Get the API config to display (optional, for debugging)
           const config = getApiConfig();
           setApiUrl(config.baseUrl);
-
-          console.log('API URL configured:', config.baseUrl);
-          console.log('WebSocket URL configured:', config.wsUrl);
-
-          // Request permissions
-          await requestPermissions();
+          
+          // Request permissions and show educational alerts if needed
+          const permissions = await requestPermissions();
+          
+          // Check for critical permissions and provide feedback
+          if (!permissions.physicalActivity) {
+            Alert.alert(
+              "Activity Permission Required",
+              "MindMate needs access to physical activity data to track your steps and provide wellness insights. Please enable this permission in your device settings.",
+              [{ text: "OK" }]
+            );
+          }
+          
+          if (!permissions.camera || !permissions.mediaLibrary) {
+            Alert.alert(
+              "Camera & Media Permissions",
+              "MindMate needs access to your camera and media library for profile pictures and wellness tracking features.",
+              [{ text: "OK" }]
+            );
+          }
+          
+          if (!permissions.microphone) {
+            Alert.alert(
+              "Microphone Permission",
+              "MindMate needs microphone access for voice notes and communication features.",
+              [{ text: "OK" }]
+            );
+          }
+          
           setIsReady(true);
           await SplashScreen.hideAsync();
         }
       } catch (err) {
         console.error('Failed to initialize app:', err);
-        setIsReady(true); // Continue anyway to avoid app being stuck
+        setIsReady(true);
         await SplashScreen.hideAsync();
       }
-
+      
       // Register background step tracking
       await registerBackgroundStepTracking();
     };
-
+  
     initializeApp();
   }, [loaded]);
 
