@@ -17,6 +17,7 @@
     "android": {
       "package": "com.mindmate.app",
       "versionCode": 1,
+      "minSdkVersion": 26,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
