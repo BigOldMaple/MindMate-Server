@@ -60,10 +60,10 @@ export default function SettingsScreen() {
       // For immediate refresh of notifications when the user goes to the notifications screen,
       // we'll store a flag in secure storage that the notifications screen can check
       await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
-      
+
       // We could also directly fetch notifications here to warm the cache
       await notificationsApi.getNotifications();
-      
+
       console.log('Notifications refreshed after timer reset');
     } catch (error) {
       console.error('Error refreshing notifications:', error);
@@ -86,10 +86,10 @@ export default function SettingsScreen() {
             try {
               // Show loading indicator
               setIsResetting(true);
-              
+
               // First reset the timer on the server
               const response = await checkInApi.resetCheckInTimer();
-              
+
               // Clear any local cached check-in status
               try {
                 await SecureStore.deleteItemAsync('lastCheckInTime');
@@ -98,19 +98,19 @@ export default function SettingsScreen() {
                 console.error('Error clearing cached check-in status:', cacheError);
                 // Continue even if cache clearing fails
               }
-              
+
               // Clear any existing check-in related notifications
               try {
                 const notifications = await notificationsApi.getNotifications();
-                
+
                 // Find any check-in related notifications
                 const checkInNotifications = notifications.filter(
-                  n => n.type === 'wellness' && 
-                       (n.title === 'Check-In Complete' || 
-                        n.title === 'Check-In Available' || 
-                        n.title === 'Check-In Available Soon')
+                  n => n.type === 'wellness' &&
+                    (n.title === 'Check-In Complete' ||
+                      n.title === 'Check-In Available' ||
+                      n.title === 'Check-In Available Soon')
                 );
-                
+
                 // Delete each notification
                 for (const notification of checkInNotifications) {
                   const notificationId = notification.id || notification._id;
@@ -125,7 +125,7 @@ export default function SettingsScreen() {
               } catch (notifError) {
                 console.error('Error handling notifications during reset:', notifError);
               }
-              
+
               // Manually create a new Check-In Available notification if one wasn't returned by the server
               if (response?.notification?.id) {
                 console.log('Server created notification:', response.notification);
@@ -141,19 +141,19 @@ export default function SettingsScreen() {
                     actionable: true,
                     actionRoute: '/home/check_in'
                   };
-                  
+
                   await notificationsApi.createNotification(newNotification);
                   console.log('Created local notification for check-in availability');
                 } catch (createErr) {
                   console.error('Error creating local notification:', createErr);
                 }
               }
-              
+
               // Then trigger a local push notification
               await notificationService.sendTestNotification();
               await refreshNotifications();
               Alert.alert(
-                'Success', 
+                'Success',
                 'Check-in timer has been reset. You should now have a new Check-In Available notification.'
               );
             } catch (error) {
@@ -225,8 +225,10 @@ export default function SettingsScreen() {
           </Link>
 
           {/* Privacy & Notifications Section */}
-          <Text style={styles.sectionHeader}>PRIVACY & NOTIFICATIONS</Text>
-          <Pressable style={styles.menuItem}>
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => router.push('/profile/settings/privacy')}
+          >
             <View style={styles.leftContent}>
               <FontAwesome name="lock" size={20} color="#666" style={styles.icon} />
               <View>
@@ -294,25 +296,25 @@ export default function SettingsScreen() {
           </Pressable>
 
 
-{/* Reset Check-in Timer button */}
-<Pressable
-  style={[styles.menuItem, isResetting && styles.disabledMenuItem]}
-  onPress={handleResetCheckInTimer}
-  disabled={isResetting}
->
-  <View style={styles.leftContent}>
-    <FontAwesome name="clock-o" size={20} color="#666" style={styles.icon} />
-    <View>
-      <Text style={styles.menuTitle}>Reset Check-in Timer</Text>
-      <Text style={styles.menuSubtitle}>Developer tool to reset check-in cooldown</Text>
-    </View>
-  </View>
-  {isResetting ? (
-    <ActivityIndicator size="small" color="#2196F3" />
-  ) : (
-    <Text style={styles.chevron}>›</Text>
-  )}
-</Pressable>
+          {/* Reset Check-in Timer button */}
+          <Pressable
+            style={[styles.menuItem, isResetting && styles.disabledMenuItem]}
+            onPress={handleResetCheckInTimer}
+            disabled={isResetting}
+          >
+            <View style={styles.leftContent}>
+              <FontAwesome name="clock-o" size={20} color="#666" style={styles.icon} />
+              <View>
+                <Text style={styles.menuTitle}>Reset Check-in Timer</Text>
+                <Text style={styles.menuSubtitle}>Developer tool to reset check-in cooldown</Text>
+              </View>
+            </View>
+            {isResetting ? (
+              <ActivityIndicator size="small" color="#2196F3" />
+            ) : (
+              <Text style={styles.chevron}>›</Text>
+            )}
+          </Pressable>
 
           {/* Test Notification button */}
           <Pressable
@@ -360,7 +362,7 @@ const styles = StyleSheet.create({
   },
   disabledMenuItem: {
     opacity: 0.6,
-  },  
+  },
   sectionHeader: {
     fontSize: 13,
     fontWeight: '600',
