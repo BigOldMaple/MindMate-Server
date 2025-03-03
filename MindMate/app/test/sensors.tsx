@@ -42,7 +42,7 @@ export default function SensorsScreen() {
   useEffect(() => {
     let isMounted = true;
     console.log('Sensor screen mounted');
-
+  
     const setupPedometer = async () => {
       try {
         console.log('Checking pedometer...');
@@ -52,25 +52,12 @@ export default function SensorsScreen() {
         console.log('Pedometer available:', available);
         
         if (available) {
-          // Get the current stored step count first
-          try {
-            const storedSteps = await SecureStore.getItemAsync('latestStepCount');
-            console.log('Retrieved stored step count:', storedSteps);
-            
-            if (storedSteps && isMounted) {
-              setSteps(parseInt(storedSteps, 10));
-              setLastUpdate(new Date().toLocaleTimeString());
-            }
-            
-            // Then get latest actual step count
-            const todaySteps = await stepService.getTodaySteps();
-            if (isMounted) {
-              console.log('Retrieved latest step count:', todaySteps);
-              setSteps(todaySteps);
-              setLastUpdate(new Date().toLocaleTimeString());
-            }
-          } catch (error) {
-            console.error('Error getting initial steps:', error);
+          // Get the latest steps now that setup is complete
+          const todaySteps = await stepService.getTodaySteps();
+          if (isMounted) {
+            console.log('Retrieved latest step count:', todaySteps);
+            setSteps(todaySteps);
+            setLastUpdate(new Date().toLocaleTimeString());
           }
           
           // Only set up a new subscription if we don't already have one
@@ -103,6 +90,8 @@ export default function SensorsScreen() {
       console.log('Sensor screen unmounting - NOT removing step subscription');
       isMounted = false;
       clearInterval(intervalId);
+    };
+  }, []);
       
       // CRITICAL: DON'T remove the subscription or call cleanup
       // This is what was causing the reset
@@ -110,9 +99,7 @@ export default function SensorsScreen() {
       //   subscriptionRef.current.remove();
       //   subscriptionRef.current = null;
       // }
-    };
-  }, []);
-  
+      
   return (
     <ScrollView style={styles.container}>
       <View style={styles.card}>
