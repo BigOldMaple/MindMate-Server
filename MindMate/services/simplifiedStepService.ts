@@ -199,6 +199,8 @@ export class StepService {
   async getTodaySteps(): Promise<number> {
     // Check if we need to reset steps for a new day
     const wasReset = await this.checkAndResetStepsIfNeeded();
+    //------------------wasReset unused-------------------
+    
     
     // If not initialized or pedometer not available, try to set up
     if (!this.isInitialized || !this.isAvailable) {
