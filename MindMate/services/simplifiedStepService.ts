@@ -14,7 +14,6 @@ export class StepService {
   private stepCountSubscription: { remove: () => void } | null = null;
   private lastResetDate: string | null = null;
   private pedometerOffset = 0; // Offset to maintain step count across app restarts
-  private hasInitializedPedometer = false; // Flag to track first reading
   private isInitialized = false;
 
   constructor() {}
@@ -75,19 +74,6 @@ export class StepService {
         this.currentStepCount = 0;
         await SecureStore.setItemAsync(LATEST_STEP_COUNT_KEY, '0');
         
-        // IMPORTANT: Update the offset to account for steps so far
-        if (Platform.OS === 'android') {
-          try {
-            // Get current raw pedometer value to use as the new offset
-            const reading = await Pedometer.getStepCountAsync(new Date(0), new Date());
-            this.pedometerOffset = reading.steps;
-            await SecureStore.setItemAsync(PEDOMETER_OFFSET_KEY, this.pedometerOffset.toString());
-            console.log('Updated pedometer offset on day change:', this.pedometerOffset);
-          } catch (error) {
-            console.error('Error updating offset on day change:', error);
-          }
-        }
-        
         // Update the reset date
         await SecureStore.setItemAsync(LAST_RESET_DATE_KEY, today);
         this.lastResetDate = today;
@@ -111,7 +97,7 @@ export class StepService {
 
       console.log('Initializing step service...');
       
-      // IMPORTANT: Load saved data FIRST
+      // Load saved data FIRST
       await this.loadSavedData();
       
       this.isAvailable = await Pedometer.isAvailableAsync();
@@ -140,66 +126,39 @@ export class StepService {
 
     console.log('Starting to watch steps with offset:', this.pedometerOffset);
     
-    // Start watching steps
+    // Start watching steps based on platform
     if (Platform.OS === 'android') {
-      // Get initial reading to establish baseline
-      try {
-        const reading = await Pedometer.getStepCountAsync(new Date(0), new Date());
-        console.log('Initial raw pedometer reading:', reading.steps);
-        
-        // Only set a new offset if we don't have one (first app run)
-        if (this.pedometerOffset === 0) {
-          this.pedometerOffset = reading.steps;
-          await SecureStore.setItemAsync(PEDOMETER_OFFSET_KEY, reading.steps.toString());
-          console.log('Set initial pedometer offset:', reading.steps);
-        }
-        
-        // Calculate current steps based on the latest reading and our stored offset
-        const currentSteps = Math.max(0, reading.steps - this.pedometerOffset);
-        
-        // If we have a saved step count that's higher, preserve it
-        // This handles cases where the device might have rebooted
-        if (this.currentStepCount > currentSteps) {
-          console.log('Preserving higher saved step count:', this.currentStepCount, 'vs', currentSteps);
-          // Update offset to maintain the current count
-          this.pedometerOffset = reading.steps - this.currentStepCount;
-          await SecureStore.setItemAsync(PEDOMETER_OFFSET_KEY, this.pedometerOffset.toString());
-        } else if (currentSteps > 0) {
-          // Update step count with the calculated value
-          this.currentStepCount = currentSteps;
-          await SecureStore.setItemAsync(LATEST_STEP_COUNT_KEY, currentSteps.toString());
-        }
-      } catch (error) {
-        console.error('Error getting initial pedometer reading:', error);
-      }
+      // On Android, we ONLY use watchStepCount because getStepCountAsync isn't supported
+      console.log('Setting up Android step tracking with saved count:', this.currentStepCount);
       
-      // Now start watching for changes
+      // Start watching steps
       this.stepCountSubscription = Pedometer.watchStepCount(async result => {
         try {
-          // Calculate steps using our maintained offset
-          const steps = Math.max(0, result.steps - this.pedometerOffset);
-          
-          // If new step count is less than stored (could happen on device reboot),
-          // update the offset to maintain our count
-          if (steps < this.currentStepCount) {
-            this.pedometerOffset = result.steps - this.currentStepCount;
+          // On first reading after app start
+          if (this.pedometerOffset === 0) {
+            // If this is our first reading, use it as the baseline offset
+            // but preserve our saved step count
+            this.pedometerOffset = result.steps;
             await SecureStore.setItemAsync(PEDOMETER_OFFSET_KEY, this.pedometerOffset.toString());
-            console.log('Updated offset to maintain step count:', this.pedometerOffset);
+            console.log('Initialized Android pedometer offset:', this.pedometerOffset);
           } else {
-            // Otherwise update step count with new value
-            this.currentStepCount = steps;
-            await SecureStore.setItemAsync(LATEST_STEP_COUNT_KEY, steps.toString());
+            // Normal case: calculate new step count based on offset
+            const newSteps = Math.max(0, result.steps - this.pedometerOffset);
+            
+            // Only update if new reading gives higher count
+            if (newSteps > this.currentStepCount) {
+              this.currentStepCount = newSteps;
+              await SecureStore.setItemAsync(LATEST_STEP_COUNT_KEY, newSteps.toString());
+              await SecureStore.setItemAsync(LAST_STEP_UPDATE_TIME_KEY, new Date().toISOString());
+              console.log(`Updated step count: ${newSteps} (raw: ${result.steps}, offset: ${this.pedometerOffset})`);
+            }
           }
-          
-          await SecureStore.setItemAsync(LAST_STEP_UPDATE_TIME_KEY, new Date().toISOString());
-          
-          console.log(`Step update - Raw: ${result.steps}, Offset: ${this.pedometerOffset}, Steps: ${steps}`);
         } catch (error) {
           console.error('Error processing step update:', error);
         }
       });
     } else if (Platform.OS === 'ios') {
-      // iOS implementation remains the same as before...
+      // iOS implementation can use getStepCountAsync as it's supported
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       
@@ -250,7 +209,7 @@ export class StepService {
       }
     }
 
-    // For both platforms, return the maintained step count
+    // Return the current tracked count
     return this.currentStepCount;
   }
 
