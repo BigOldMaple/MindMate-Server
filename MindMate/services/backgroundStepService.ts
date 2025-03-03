@@ -12,12 +12,17 @@ TaskManager.defineTask(STEP_TRACKING_TASK, async () => {
     const isAvailable = await stepService.setup();
     if (!isAvailable) return BackgroundFetch.BackgroundFetchResult.NoData;
     
+    // First check if we need to reset the step count for a new day
+    await stepService.checkAndResetStepsIfNeeded();
+    
+    // Then get the current step count
     const steps = await stepService.getTodaySteps();
     
     // Store steps count for app to use when opened
     await SecureStore.setItemAsync('latestStepCount', steps.toString());
     await SecureStore.setItemAsync('lastStepUpdateTime', new Date().toISOString());
     
+    console.log('Background step tracking updated, current steps:', steps);
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
     console.error('Background step tracking failed:', error);
@@ -35,6 +40,8 @@ export const registerBackgroundStepTracking = async () => {
         startOnBoot: true,
       });
       console.log('Step tracking registered in background');
+    } else {
+      console.log('Step tracking task already registered');
     }
     return true;
   } catch (error) {

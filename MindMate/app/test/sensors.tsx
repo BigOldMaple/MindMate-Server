@@ -1,27 +1,71 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, ScrollView, Platform, AppState, AppStateStatus } from 'react-native';
 import { stepService } from '@/services/simplifiedStepService';
+import * as SecureStore from 'expo-secure-store';
 
 export default function SensorsScreen() {
   const [steps, setSteps] = useState(0);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('Never');
+  const appState = useRef(AppState.currentState);
+  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
+  
+  // Handle app state changes (background/foreground)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      // App has come to the foreground
+      refreshStepCount();
+    }
+    appState.current = nextAppState;
+  };
+
+  // Refresh step count when needed
+  const refreshStepCount = async () => {
+    try {
+      const todaySteps = await stepService.getTodaySteps();
+      setSteps(todaySteps);
+      setLastUpdate(new Date().toLocaleTimeString());
+      console.log('Step count refreshed:', todaySteps);
+    } catch (error) {
+      console.error('Error refreshing step count:', error);
+    }
+  };
+
+  // Set up step counter once on component mount
   useEffect(() => {
     let isMounted = true;
-    let subscription: { remove: () => void } | null = null;
-    
+    console.log('Sensor screen mounted');
+
     const setupPedometer = async () => {
       try {
+        console.log('Checking pedometer...');
         // Check if pedometer is available
         const available = await stepService.setup();
         if (isMounted) setIsAvailable(available);
+        console.log('Pedometer available:', available);
         
         if (available) {
-          // Get initial step count
+          // Get the current stored step count first
           try {
+            const storedSteps = await SecureStore.getItemAsync('latestStepCount');
+            console.log('Retrieved stored step count:', storedSteps);
+            
+            if (storedSteps && isMounted) {
+              setSteps(parseInt(storedSteps, 10));
+              setLastUpdate(new Date().toLocaleTimeString());
+            }
+            
+            // Then get latest actual step count
             const todaySteps = await stepService.getTodaySteps();
             if (isMounted) {
+              console.log('Retrieved latest step count:', todaySteps);
               setSteps(todaySteps);
               setLastUpdate(new Date().toLocaleTimeString());
             }
@@ -29,13 +73,20 @@ export default function SensorsScreen() {
             console.error('Error getting initial steps:', error);
           }
           
-          // Subscribe to step count updates
-          subscription = stepService.subscribeToUpdates((newSteps) => {
-            if (isMounted) {
-              setSteps(newSteps);
-              setLastUpdate(new Date().toLocaleTimeString());
-            }
-          });
+          // Only set up a new subscription if we don't already have one
+          if (!subscriptionRef.current) {
+            console.log('Setting up step subscription');
+            // Subscribe to step count updates
+            subscriptionRef.current = stepService.subscribeToUpdates((newSteps) => {
+              if (isMounted) {
+                console.log('Step update received:', newSteps);
+                setSteps(newSteps);
+                setLastUpdate(new Date().toLocaleTimeString());
+              }
+            });
+          } else {
+            console.log('Using existing step subscription');
+          }
         }
       } catch (error) {
         console.error('Error setting up pedometer:', error);
@@ -46,25 +97,19 @@ export default function SensorsScreen() {
     setupPedometer();
     
     // Set up an interval update as a fallback
-    const intervalId = setInterval(async () => {
-      if (isAvailable) {
-        try {
-          const todaySteps = await stepService.getTodaySteps();
-          if (isMounted) {
-            setSteps(todaySteps);
-            setLastUpdate(new Date().toLocaleTimeString());
-          }
-        } catch (error) {
-          console.error('Error fetching steps in interval:', error);
-        }
-      }
-    }, 30000); // Update every 30 seconds
+    const intervalId = setInterval(() => refreshStepCount(), 30000);
     
     return () => {
+      console.log('Sensor screen unmounting - NOT removing step subscription');
       isMounted = false;
-      if (subscription) subscription.remove();
       clearInterval(intervalId);
-      stepService.cleanup(); // Clean up any subscriptions
+      
+      // CRITICAL: DON'T remove the subscription or call cleanup
+      // This is what was causing the reset
+      // if (subscriptionRef.current) {
+      //   subscriptionRef.current.remove();
+      //   subscriptionRef.current = null;
+      // }
     };
   }, []);
   
@@ -78,6 +123,9 @@ export default function SensorsScreen() {
         <Text style={styles.platformText}>Platform: {Platform.OS}</Text>
         <Text style={styles.stepsText}>Today's Steps: {steps}</Text>
         <Text style={styles.updateText}>Last Updated: {lastUpdate}</Text>
+        <Text style={styles.noteText}>
+          Step count persists across app restarts and only resets at midnight.
+        </Text>
       </View>
     </ScrollView>
   );
@@ -121,5 +169,12 @@ const styles = StyleSheet.create({
   updateText: {
     fontSize: 14,
     color: '#666',
+    marginBottom: 12,
   },
+  noteText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: '#666',
+    marginTop: 12,
+  }
 });
