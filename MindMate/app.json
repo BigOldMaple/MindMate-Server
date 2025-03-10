@@ -22,6 +22,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "buildToolsVersion": "34.0.0",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
@@ -53,12 +54,14 @@
           "android": {
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
-            "minSdkVersion": 26,
-            "buildToolsVersion": "33.0.0",
+            "minSdkVersion": 28,
+            "buildToolsVersion": "34.0.0",
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResources": true,
             "useLegacyPackaging": false,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "kotlinVersion": "1.8.0",
+            "gradlePluginVersion": "8.1.0"
           }
         }
       ],
