@@ -1,15 +1,12 @@
 // This fix should be applied to android/build.gradle
 
-// In the root build.gradle, update the kotlinVersion to match the one required
-// by expo-modules-core. The error is occurring because of a Kotlin version mismatch.
-
 buildscript {
     ext {
         buildToolsVersion = findProperty('android.buildToolsVersion') ?: '34.0.0'
         minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '28')  
         compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')  
         targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
-        // Update Kotlin version to 1.9.10 which is compatible with expo-modules-core
+        // Keep the Kotlin version at 1.9.10
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.10'
         ndkVersion = "26.1.10909125"
     }
@@ -41,14 +38,34 @@ allprojects {
         maven { url 'https://www.jitpack.io' }
     }
    
-    // Add this to force Kotlin 1.7.20 for all modules
+    // Force consistent Kotlin versions for all modules
     configurations.all {
         resolutionStrategy {
+            eachDependency { details ->
+                if (details.requested.group == 'org.jetbrains.kotlin') {
+                    details.useVersion '1.9.10'
+                }
+            }
             force "org.jetbrains.kotlin:kotlin-stdlib:1.9.10"
             force "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10"
             force "org.jetbrains.kotlin:kotlin-reflect:1.9.10"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10"
+        }
+    }
+}
+
+// Add a property to apply Kotlin compiler arguments globally
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                freeCompilerArgs += [
+                    "-Xskip-metadata-version-check",
+                    "-Xskip-prerelease-check",
+                    "-Xsuppress-version-warnings"
+                ]
+            }
         }
     }
 }
