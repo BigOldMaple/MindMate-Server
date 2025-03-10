@@ -38,8 +38,5 @@ yarn-error.*
 .idea/
 .vscode/
 
-/android
-/ios
-
 .env
 ```

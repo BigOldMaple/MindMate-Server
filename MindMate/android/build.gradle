@@ -1,11 +1,11 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
     ext {
-        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
-        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
-        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
+        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '34.0.0'
+        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '28')  // Changed from 24 to 28 to match app.json
+        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '34')  // Changed from 35 to 34
         targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
-        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.7.20'  // Changed from 1.9.25 to 1.7.20
+        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.7.20'
         ndkVersion = "26.1.10909125"
     }
     repositories {
@@ -13,9 +13,9 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath('com.android.tools.build:gradle')
+        classpath('com.android.tools.build:gradle:8.6.0')  // Added explicit version to match app.json
         classpath('com.facebook.react:react-native-gradle-plugin')
-        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")  // Use the kotlinVersion variable
     }
 }
 
@@ -35,7 +35,7 @@ allprojects {
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
     }
-    
+   
     // Add this to force Kotlin 1.7.20 for all modules
     configurations.all {
         resolutionStrategy {
