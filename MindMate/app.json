@@ -17,7 +17,7 @@
     "android": {
       "package": "com.mindmate.app",
       "versionCode": 1,
-      "minSdkVersion": 26,
+      "minSdkVersion": 28,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -38,7 +38,9 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.WAKE_LOCK",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_ACTIVITY"
       ]
     },
     "plugins": [

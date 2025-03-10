@@ -295,6 +295,20 @@ export default function SettingsScreen() {
             <Text style={styles.chevron}>›</Text>
           </Pressable>
 
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => router.push('../profile/settings/health-connect-test')}
+          >
+            <View style={styles.leftContent}>
+              <FontAwesome name="heartbeat" size={20} color="#666" style={styles.icon} />
+              <View>
+                <Text style={styles.menuTitle}>Health Connect Test</Text>
+                <Text style={styles.menuSubtitle}>Test Google Health Connect integration</Text>
+              </View>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+
 
           {/* Reset Check-in Timer button */}
           <Pressable
