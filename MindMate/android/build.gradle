@@ -1,5 +1,4 @@
 // This fix should be applied to android/build.gradle
-
 buildscript {
     ext {
         buildToolsVersion = findProperty('android.buildToolsVersion') ?: '34.0.0'
@@ -22,6 +21,21 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Add this specific fix for Kotlin compiler
+subprojects { subproject ->
+    subproject.plugins.withId("org.jetbrains.kotlin.android") {
+        subproject.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                freeCompilerArgs += [
+                    "-Xskip-metadata-version-check",
+                    "-Xskip-prerelease-check",
+                    "-Xsuppress-version-warnings"
+                ]
+            }
+        }
+    }
+}
 
 allprojects {
     repositories {
@@ -51,21 +65,6 @@ allprojects {
             force "org.jetbrains.kotlin:kotlin-reflect:1.9.10"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10"
-        }
-    }
-}
-
-// Add a property to apply Kotlin compiler arguments globally
-gradle.projectsEvaluated {
-    allprojects {
-        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                freeCompilerArgs += [
-                    "-Xskip-metadata-version-check",
-                    "-Xskip-prerelease-check",
-                    "-Xsuppress-version-warnings"
-                ]
-            }
         }
     }
 }

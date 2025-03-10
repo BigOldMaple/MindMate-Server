@@ -1,0 +1,19 @@
+allprojects {
+    afterEvaluate { project ->
+        if (project.name == "expo-modules-core") {
+            project.android {
+                kotlinOptions {
+                    kotlinOptions.suppressKotlinVersionCompatibilityCheck = true
+                }
+            }
+            project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    freeCompilerArgs += [
+                        "-Xskip-metadata-version-check",
+                        "-Xsuppress-version-warnings"
+                    ]
+                }
+            }
+        }
+    }
+}

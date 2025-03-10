@@ -5,19 +5,31 @@
       "distribution": "internal",
       "android": {
         "gradleCommand": ":app:assembleDebug"
-      }
+      },
+      "env": {
+        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true" 
+      },
+      "prebuildCommand": "node fix-expo-modules.js"
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "env": {
+        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true"
+      },
+      "prebuildCommand": "node fix-expo-modules.js"
     },
     "production": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "env": {
+        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true"
+      },
+      "prebuildCommand": "node fix-expo-modules.js"
     }
   }
 }
