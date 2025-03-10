@@ -59,7 +59,7 @@
             "useLegacyPackaging": false,
             "usesCleartextTraffic": true,
             "kotlinVersion": "1.7.20",
-            "gradlePluginVersion": "8.1.0"
+            "gradlePluginVersion": "8.6.0"
           }
         }
       ],
