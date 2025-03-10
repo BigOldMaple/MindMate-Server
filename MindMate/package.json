@@ -2,6 +2,13 @@
   "name": "mindmate",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "expo": {
+    "doctor": {
+      "projectConfig": {
+        "skipNativeConfigSync": true
+      }
+    }
+  },
   "scripts": {
     "dev": "expo start --clear",
     "start": "expo start",
