@@ -17,12 +17,10 @@
     "android": {
       "package": "com.mindmate.app",
       "versionCode": 1,
-      "minSdkVersion": 28,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "buildToolsVersion": "34.0.0",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
@@ -52,8 +50,8 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
             "minSdkVersion": 28,
             "buildToolsVersion": "34.0.0",
             "enableProguardInReleaseBuilds": true,
