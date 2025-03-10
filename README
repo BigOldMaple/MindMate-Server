@@ -67,6 +67,79 @@ npx expo prebuild --clean
 npx expo run:android  # or npx expo run:ios
 ```
 
+## Understanding the Android Folder
+
+When you run `npx expo prebuild`, an Android folder is created in your project. This folder contains all the native Android code necessary for your app.
+
+### What is the Android Folder?
+
+The Android folder contains a complete native Android project including:
+
+- Java/Kotlin source files for native functionality
+- Resource files and drawables
+- AndroidManifest.xml with permission declarations
+- Gradle build configurations (settings.gradle, build.gradle)
+- Native module implementations and dependencies
+
+This is essentially a full Android Studio project that Expo generates based on your app.json configuration and installed packages.
+
+### Why is the Android Folder Necessary?
+
+The Android folder is essential for several reasons:
+
+1. Native Module Integration: Features like Health Connect require native Android code that cannot be implemented in JavaScript/TypeScript alone.
+
+2. Permission Configuration: Special permissions like Health Connect's `android.permission.health.READ_STEPS` must be properly declared in the AndroidManifest.xml file.
+
+3. SDK Version Management: When changing minSdkVersion or targetSdkVersion in app.json, these changes must be applied to the native build configuration.
+
+4. EAS Build Requirements: When using EAS to build your app, the service needs the complete native code to build a proper APK or AAB file.
+
+### The Relationship Between Prebuild and EAS
+
+When using EAS (Expo Application Services) for building your app, you might wonder why manually running `npx expo prebuild` is necessary. Here's why both steps matter:
+
+1. `npx expo prebuild`: This generates the native code based on your app.json configuration, creating the Android and iOS folders. Think of this as creating the architectural blueprint for your app.
+
+2. `eas build`: This uses the generated native code to compile a complete app binary. Think of this as the construction phase that follows the blueprint.
+
+While EAS does include a prebuild step automatically, running prebuild manually gives you immediate feedback on configuration issues before sending the project to EAS servers. It also allows you to inspect and potentially customize the native code.
+
+### Managing the Android Folder
+
+Now that your project includes the Android folder, it's important to know how to manage it:
+
+1. Include in Version Control: The Android folder should be committed to your Git repository to ensure consistent builds.
+
+2. Careful Modification: Generally, you should avoid manually editing files in this folder unless you have specific native code customizations to make.
+
+3. Prebuild After Configuration Changes: Whenever you change app.json settings that affect native code (like adding permissions), run `npx expo prebuild` again to update the native files.
+
+4. Use `--clean` Judiciously: The `--clean` flag removes and regenerates the entire Android folder. Only use it when you need a complete reset of native code.
+
+### Health Connect Integration
+
+For Health Connect specifically, the Android folder contains crucial native code components:
+
+1. The Android folder includes the permissions declarations in AndroidManifest.xml needed for Health Connect:
+   - `android.permission.health.READ_STEPS`
+   - `android.permission.health.READ_ACTIVITY`
+
+2. The minSdkVersion is set to 28 (Android 9.0) or higher in build.gradle, which is required for Health Connect compatibility.
+
+3. Native module bindings that allow your JavaScript/TypeScript code to communicate with the Health Connect API.
+
+### Changed Development Workflow
+
+With the addition of the Android folder, your project has transitioned from a pure Expo managed workflow to what's essentially a bare workflow with Expo modules. This means:
+
+1. You now have direct access to native code for both Android and iOS.
+2. You can use any native library (not just Expo-compatible ones).
+3. You can make native code customizations if needed.
+4. You still use EAS for building, but EAS now works with the native code in your project.
+
+This approach combines Expo's convenient build system with the flexibility of native code access for advanced features like Health Connect.
+
 ## Testing Your Changes
 
 ### Running Tests
@@ -112,6 +185,55 @@ If you encounter bundler problems:
 # Clear cache and restart
 npx expo start --clear
 ```
+
+## Health Connect Setup
+
+### App Configuration
+To enable Health Connect integration, your app.json needs specific configurations:
+
+1. Minimum SDK Version: Health Connect requires Android 9.0 (API level 28) or higher.
+   ```json
+   "minSdkVersion": 28
+   ```
+
+2. Health Connect Permissions: Add these to your permissions array.
+   ```json
+   "permissions": [
+     "android.permission.ACTIVITY_RECOGNITION",
+     "android.permission.health.READ_STEPS",
+     "android.permission.health.READ_ACTIVITY"
+   ]
+   ```
+
+### On-Device Requirements
+
+For Health Connect to work on an Android device:
+
+1. Install the Health Connect App: Available from the Google Play Store.
+
+2. Configure a Data Source: At least one app needs to write step data to Health Connect. Options include:
+   - Google Fit
+   - Samsung Health
+   - Fitbit
+   - Other fitness apps that support Health Connect
+
+3. Grant Permissions: Open the Health Connect app and grant your app permission to read step data.
+
+4. Enable Background Tracking: Use the toggles in the test screen to enable background step tracking.
+
+### Testing Health Connect
+
+To test your Health Connect integration:
+
+1. Install the rebuilt app on your Android device.
+
+2. Open the app and navigate to Settings > Health Connect Test.
+
+3. Follow the prompts to initialize and request permissions.
+
+4. If successful, you should see your step count displayed on the test screen.
+
+5. Take some steps or check back later to verify the count updates.
 
 ## Specific Feature Development Guidelines
 
