@@ -1,40 +1,14 @@
 // react-native.config.js
 module.exports = {
-    dependencies: {
-      'expo-sensors': {
-        platforms: {
-          android: null, // Let expo-modules-core handle the configuration
-        },
+  // This configuration tells React Native to let Expo handle these modules
+  // The null configuration means "use the default Expo configuration"
+  dependencies: {
+    // Let Expo handle all Expo modules
+    'expo-modules-core': {
+      platforms: {
+        android: null,
+        ios: null,
       },
-      'expo-location': {
-        platforms: {
-          android: null,
-        },
-      },
-      'expo-notifications': {
-        platforms: {
-          android: null,
-        },
-      },
-      'expo-camera': {
-        platforms: {
-          android: null,
-        },
-      },
-      'expo-secure-store': {
-        platforms: {
-          android: null,
-        },
-      },
-      'expo-media-library': {
-        platforms: {
-          android: null,
-        },
-      },
-      'expo-file-system': {
-        platforms: {
-          android: null,
-        },
-      },
-    },
-  };
+    }
+  },
+};
