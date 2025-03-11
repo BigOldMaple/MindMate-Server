@@ -36,6 +36,9 @@
       "url": "",
       "enabled": true,
       "fallbackToCacheTimeout": 0
+    },
+    "android": {
+      "package": "com.nikodemmech.MindMate"
     }
   }
 }
