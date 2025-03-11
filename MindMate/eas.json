@@ -6,31 +6,19 @@
       "android": {
         "gradleCommand": ":app:assembleDebug",
         "buildType": "apk"
-      },
-      "env": {
-        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true" 
-      },
-      "prebuildCommand": "node apply-patches.js"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true"
-      },
-      "prebuildCommand": "node apply-patches.js"
+      }
     },
     "production": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "KOTLIN_COMPOSE_COMPILER_SUPPRESS_VERSION_CHECK": "true"
-      },
-      "prebuildCommand": "node apply-patches.js"
+      }
     }
   }
 }

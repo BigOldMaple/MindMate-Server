@@ -23,8 +23,7 @@
     "clean": "expo start --clear",
     "server": "ts-node-dev --respawn --transpile-only server/index.ts",
     "server:prod": "node dist/server/index.js",
-    "ios": "expo run:ios",
-    "postinstall": "node apply-patches.js"
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@babel/plugin-proposal-decorators": "^7.25.9",
