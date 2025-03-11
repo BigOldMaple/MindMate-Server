@@ -3,8 +3,6 @@
     "name": "MindMate",
     "slug": "MindMate",
     "version": "1.0.4",
-    "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "jsEngine": "hermes",
     "assetBundlePatterns": [
