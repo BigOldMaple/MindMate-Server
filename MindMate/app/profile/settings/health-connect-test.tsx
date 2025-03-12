@@ -1,6 +1,6 @@
 // app/profile/settings/health-connect-test.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Pressable, ActivityIndicator, Linking, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { healthConnectService } from '@/services/HealthConnectService';
@@ -19,34 +19,63 @@ export default function HealthConnectTestScreen() {
     weeklySteps: false,
   });
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (Platform.OS !== 'android') {
+      setError('Health Connect is only available on Android devices');
+      return;
+    }
     checkAvailability();
   }, []);
 
   const checkAvailability = async () => {
-    const available = healthConnectService.isAvailable();
-    setIsAvailable(available);
-    
-    if (available) {
-      setIsLoading(prev => ({ ...prev, initialize: true }));
-      const initialized = await healthConnectService.initialize();
-      setIsInitialized(initialized);
-      setIsLoading(prev => ({ ...prev, initialize: false }));
+    try {
+      setError(null);
+      // First ensure Health Connect is available
+      const available = healthConnectService.isAvailable();
+      setIsAvailable(available);
       
-      // Check for existing permissions
-      if (initialized) {
-        checkPermission();
-        loadLastSync();
+      if (available) {
+        setIsLoading(prev => ({ ...prev, initialize: true }));
+        try {
+          // Initialize Health Connect with proper error handling
+          const initialized = await healthConnectService.initialize();
+          setIsInitialized(initialized);
+
+          if (initialized) {
+            // Only proceed with permission check if initialization succeeded
+            await checkPermission();
+            await loadLastSync();
+          } else {
+            setError('Health Connect failed to initialize');
+          }
+        } catch (initError) {
+          setError('Error initializing Health Connect. Please ensure the app is installed.');
+          console.error('Error initializing Health Connect:', initError);
+        }
       }
+    } catch (error) {
+      setError('Error checking Health Connect availability');
+      console.error('Error checking Health Connect availability:', error);
+    } finally {
+      setIsLoading(prev => ({ ...prev, initialize: false }));
+    }
+  };
+
+  const openHealthConnect = async () => {
+    const playStoreUrl = 'market://details?id=com.google.android.apps.healthdata';
+    try {
+      await Linking.openURL(playStoreUrl);
+    } catch {
+      // If Play Store fails, open in browser
+      await Linking.openURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
     }
   };
 
   const checkPermission = async () => {
     setIsLoading(prev => ({ ...prev, permission: true }));
     try {
-      // For simplicity, we'll just request permissions here
-      // In a production app, you might want to check permissions first without requesting
       const granted = await healthConnectService.requestStepPermissions();
       setHasPermission(granted);
       
@@ -57,6 +86,7 @@ export default function HealthConnectTestScreen() {
       }
     } catch (error) {
       console.error('Error checking permissions:', error);
+      setError('Failed to get Health Connect permissions');
     } finally {
       setIsLoading(prev => ({ ...prev, permission: false }));
     }
@@ -78,6 +108,7 @@ export default function HealthConnectTestScreen() {
       await loadLastSync();
     } catch (error) {
       console.error('Error loading today steps:', error);
+      setError('Failed to load today\'s steps');
     } finally {
       setIsLoading(prev => ({ ...prev, todaySteps: false }));
     }
@@ -90,6 +121,7 @@ export default function HealthConnectTestScreen() {
       setWeeklySteps(steps);
     } catch (error) {
       console.error('Error loading weekly steps:', error);
+      setError('Failed to load weekly steps');
     } finally {
       setIsLoading(prev => ({ ...prev, weeklySteps: false }));
     }
@@ -117,6 +149,18 @@ export default function HealthConnectTestScreen() {
         </View>
 
         <ScrollView style={styles.content}>
+          {error && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+              <Pressable
+                style={styles.retryButton}
+                onPress={checkAvailability}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
+          )}
+
           {/* Availability Status */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>System Status</Text>
@@ -168,6 +212,12 @@ export default function HealthConnectTestScreen() {
                 <Text style={styles.infoText}>
                   Health Connect is only available on Android devices with the Health Connect app installed.
                 </Text>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={openHealthConnect}
+                >
+                  <Text style={styles.actionButtonText}>Install Health Connect</Text>
+                </Pressable>
               </View>
             )}
 
@@ -315,6 +365,27 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+  },
+  errorBox: {
+    backgroundColor: '#FFEBEE',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#D32F2F',
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  retryButton: {
+    backgroundColor: '#D32F2F',
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '500',
   },
   card: {
     backgroundColor: 'white',
