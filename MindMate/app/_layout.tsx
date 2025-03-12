@@ -50,22 +50,38 @@ const currentDate = new Date().toLocaleDateString('en-GB', {
 // Permission handler utility
 const requestPermissions = async () => {
   try {
-    // Request permissions concurrently for better UX
+    // Request ONLY the core permissions concurrently
     const [
       locationPermission, 
       notificationPermission,
       cameraPermission,
-      mediaLibraryPermission,
       microphonePermission,
-      pedometerPermission
     ] = await Promise.all([
       Location.requestForegroundPermissionsAsync(),
       Notifications.requestPermissionsAsync(),
       Camera.requestCameraPermissionsAsync(),
-      MediaLibrary.requestPermissionsAsync(),
-      Audio.Audio.requestPermissionsAsync(),
-      Pedometer.isAvailableAsync() // Check if pedometer is available instead of using Health Connect
+      Audio.Audio.requestPermissionsAsync()
     ]);
+
+    // Request activity recognition using Pedometer
+    let physicalActivityPermission = false;
+    try {
+      // First check if pedometer is available
+      const isPedometerAvailable = await Pedometer.isAvailableAsync();
+      
+      if (isPedometerAvailable) {
+        // Request permissions by attempting to get steps
+        const now = new Date();
+        const start = new Date(now.getTime() - 1000); // 1 second ago
+        await Pedometer.getStepCountAsync(start, now);
+        physicalActivityPermission = true;
+      } else {
+        console.log('Pedometer is not available on this device');
+      }
+    } catch (err) {
+      console.log('Activity recognition permission not granted:', err);
+      physicalActivityPermission = false;
+    }
 
     // Initialize sensors to trigger Android permission dialog if needed
     await Accelerometer.setUpdateInterval(1000);
@@ -75,14 +91,18 @@ const requestPermissions = async () => {
     accelerometerSubscription.remove();
     gyroscopeSubscription.remove();
 
+    // Check media library status WITHOUT requesting permission
+    // This way we know the current status without triggering the dialog
+    const mediaStatus = await MediaLibrary.getPermissionsAsync();
+
     // Return comprehensive permission status
     return {
       location: locationPermission.status === 'granted',
       notification: notificationPermission.status === 'granted',
       camera: cameraPermission.status === 'granted',
-      mediaLibrary: mediaLibraryPermission.status === 'granted',
+      mediaLibrary: mediaStatus.status === 'granted',
       microphone: microphonePermission.status === 'granted',
-      physicalActivity: pedometerPermission, // Use pedometer availability instead of Health Connect
+      physicalActivity: physicalActivityPermission,
       sensors: true 
     };
   } catch (error) {
@@ -260,10 +280,10 @@ export default function RootLayout() {
             );
           }
           
-          if (!permissions.camera || !permissions.mediaLibrary) {
+          if (!permissions.camera) {
             Alert.alert(
-              "Camera & Media Permissions",
-              "MindMate needs access to your camera and media library for profile pictures and wellness tracking features.",
+              "Camera Permission",
+              "MindMate needs access to your camera for profile pictures and some features.",
               [{ text: "OK" }]
             );
           }

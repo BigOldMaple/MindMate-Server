@@ -4,7 +4,6 @@ import { useRouter, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { AuthUser } from '../services/auth';
 import { notificationService } from '../services/notificationService';
-import { Platform, Alert } from 'react-native';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -24,19 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // First, check and request permissions
-        const { SensorPermissions } = require('../utils/sensorPermissions');
-        const permissionsGranted = await SensorPermissions.requestRequiredPermissions();
-        
-        if (!permissionsGranted) {
-          console.warn('Not all permissions were granted');
-          // Show a more detailed explanation to the user about required permissions
-          Alert.alert(
-            "Important Permissions Required",
-            "MindMate needs access to certain device features to function properly. Please grant the requested permissions to get the full experience.",
-            [{ text: "OK" }]
-          );
-        }
+        // REMOVED: No longer requesting permissions here
+        // The app/_layout.tsx file handles permissions now
         
         // Initialize notification service
         await notificationService.initialize();
