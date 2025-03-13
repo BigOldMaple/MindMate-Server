@@ -6,16 +6,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { Pressable, Text, StyleSheet, LogBox, AppState, AppStateStatus, Alert } from 'react-native';
+import { Pressable, Text, StyleSheet, LogBox, AppState, AppStateStatus, Alert, Platform } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { Accelerometer, Gyroscope, Pedometer } from 'expo-sensors';
 import { registerBackgroundStepTracking } from '@/services/backgroundStepService';
-
+import * as TaskManager from 'expo-task-manager';
+import * as Linking from 'expo-linking';
 import { Camera } from 'expo-camera';
-import * as MediaLibrary from 'expo-media-library';
 import * as Audio from 'expo-av';
 
 // Prevent specific warnings from showing in development
@@ -47,10 +47,26 @@ const currentDate = new Date().toLocaleDateString('en-GB', {
   year: 'numeric'
 });
 
+// Define a background task name for activity recognition
+const ACTIVITY_RECOGNITION_TASK = 'ACTIVITY_RECOGNITION_TASK';
+
+// Register the background task for activity recognition
+TaskManager.defineTask(ACTIVITY_RECOGNITION_TASK, async ({ data, error }) => {
+  if (error) {
+    console.error('Activity recognition task error:', error);
+    return;
+  }
+  
+  if (data) {
+    console.log('Activity recognition data:', data);
+    // Process activity data here
+  }
+});
+
 // Permission handler utility
 const requestPermissions = async () => {
   try {
-    // Request ONLY the core permissions concurrently
+    // Request core permissions concurrently (WITHOUT media library)
     const [
       locationPermission, 
       notificationPermission,
@@ -63,24 +79,96 @@ const requestPermissions = async () => {
       Audio.Audio.requestPermissionsAsync()
     ]);
 
-    // Request activity recognition using Pedometer
+    // Request physical activity permission specifically
     let physicalActivityPermission = false;
-    try {
-      // First check if pedometer is available
-      const isPedometerAvailable = await Pedometer.isAvailableAsync();
-      
-      if (isPedometerAvailable) {
-        // Request permissions by attempting to get steps
-        const now = new Date();
-        const start = new Date(now.getTime() - 1000); // 1 second ago
-        await Pedometer.getStepCountAsync(start, now);
-        physicalActivityPermission = true;
-      } else {
-        console.log('Pedometer is not available on this device');
+    
+    if (Platform.OS === 'android') {
+      try {
+        // First check if pedometer is available
+        const isPedometerAvailable = await Pedometer.isAvailableAsync();
+        
+        if (isPedometerAvailable) {
+          console.log("Pedometer is available, requesting permission...");
+          
+          // Use a direct approach to trigger the permission dialog
+          // This subscription should trigger the system permission dialog
+          const subscription = Pedometer.watchStepCount(() => {
+            console.log("Step count updated");
+          });
+          
+          // Small delay to make sure the permission dialog appears
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Test if permission was granted by trying to get steps
+          try {
+            const now = new Date();
+            const start = new Date(now.getTime() - 10000); // 10 seconds ago
+            await Pedometer.getStepCountAsync(start, now);
+            physicalActivityPermission = true;
+            console.log("Physical activity permission granted");
+          } catch (stepErr) {
+            console.log("Failed to get steps:", stepErr);
+            physicalActivityPermission = false;
+          }
+          
+          // Clean up subscription
+          subscription.remove();
+        } else {
+          console.log('Pedometer is not available on this device');
+        }
+      } catch (err) {
+        console.log('Activity recognition permission issue:', err);
+        
+        // For debugging purposes, let's display the specific error
+        console.log('Android version:', Platform.Version);
+        console.log('Error details:', JSON.stringify(err));
       }
-    } catch (err) {
-      console.log('Activity recognition permission not granted:', err);
-      physicalActivityPermission = false;
+      
+      // If not granted through Pedometer, try a fallback
+      if (!physicalActivityPermission) {
+        console.log("Trying alternative approach to request physical activity permission");
+        
+        // Try starting the pedometer again with a different approach
+        try {
+          // Try to use the pedometer in a different way
+          const pedometerIsAvailable = await Pedometer.isAvailableAsync();
+          if (pedometerIsAvailable) {
+            console.log("Trying alternative pedometer approach...");
+            
+            // Try to get historical steps which might trigger the permission
+            const end = new Date();
+            const start = new Date();
+            start.setDate(start.getDate() - 1); // Go back one day
+            
+            // This should trigger the permission dialog
+            await Pedometer.getStepCountAsync(start, end);
+            
+            // Double check it worked by trying again
+            try {
+              const result = await Pedometer.getStepCountAsync(start, end);
+              console.log("Got step count:", result.steps);
+              physicalActivityPermission = true;
+            } catch (stepError) {
+              console.log("Still can't access steps:", stepError);
+            }
+          }
+        } catch (taskError) {
+          console.log("Error with alternative approach:", taskError);
+        }
+      }
+    } else if (Platform.OS === 'ios') {
+      // On iOS, Pedometer will request the permission
+      try {
+        const isPedometerAvailable = await Pedometer.isAvailableAsync();
+        if (isPedometerAvailable) {
+          // Just start a subscription which will trigger the permission request on iOS
+          const subscription = Pedometer.watchStepCount(() => {});
+          subscription.remove();
+          physicalActivityPermission = true;
+        }
+      } catch (err) {
+        console.log('iOS pedometer permission issue:', err);
+      }
     }
 
     // Initialize sensors to trigger Android permission dialog if needed
@@ -88,19 +176,18 @@ const requestPermissions = async () => {
     await Gyroscope.setUpdateInterval(1000);
     const accelerometerSubscription = Accelerometer.addListener(() => {});
     const gyroscopeSubscription = Gyroscope.addListener(() => {});
-    accelerometerSubscription.remove();
-    gyroscopeSubscription.remove();
-
-    // Check media library status WITHOUT requesting permission
-    // This way we know the current status without triggering the dialog
-    const mediaStatus = await MediaLibrary.getPermissionsAsync();
+    
+    // Clean up subscriptions immediately after requesting permissions
+    setTimeout(() => {
+      accelerometerSubscription.remove();
+      gyroscopeSubscription.remove();
+    }, 1000);
 
     // Return comprehensive permission status
     return {
       location: locationPermission.status === 'granted',
       notification: notificationPermission.status === 'granted',
       camera: cameraPermission.status === 'granted',
-      mediaLibrary: mediaStatus.status === 'granted',
       microphone: microphonePermission.status === 'granted',
       physicalActivity: physicalActivityPermission,
       sensors: true 
@@ -111,7 +198,6 @@ const requestPermissions = async () => {
       location: false,
       notification: false,
       camera: false,
-      mediaLibrary: false,
       microphone: false,
       physicalActivity: false,
       sensors: false
@@ -271,12 +357,38 @@ export default function RootLayout() {
           // Request permissions and show educational alerts if needed
           const permissions = await requestPermissions();
           
+          // For debugging purposes, check Android manifest permissions
+          if (Platform.OS === 'android') {
+            try {
+              console.log('Checking Android manifest permissions...');
+              console.log('Android version:', Platform.Version);
+              // We can't actually read the manifest at runtime, but we can log what permissions we're using
+              console.log('App is using these permissions from AndroidManifest.xml:');
+              console.log('- ACTIVITY_RECOGNITION (for physical activity)');
+              console.log('- CAMERA');
+              console.log('- MICROPHONE');
+              console.log('- LOCATION');
+            } catch (e) {
+              console.log('Could not log permissions:', e);
+            }
+          }
+          
           // Check for critical permissions and provide feedback
           if (!permissions.physicalActivity) {
             Alert.alert(
               "Activity Permission Required",
-              "MindMate needs access to physical activity data to track your steps and provide wellness insights. Please enable this permission in your device settings.",
-              [{ text: "OK" }]
+              "MindMate needs access to physical activity data to track your steps and provide wellness insights. Please grant this permission in Settings > Apps > MindMate > Permissions > Physical activity.",
+              [{ 
+                text: "Open Settings", 
+                onPress: () => {
+                  // On Android, this will open the app settings
+                  // where the user can enable the permission
+                  if (Platform.OS === 'android') {
+                    Linking.openSettings();
+                  }
+                } 
+              },
+              { text: "Later" }]
             );
           }
           
