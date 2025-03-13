@@ -7,6 +7,19 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+// Add these type definitions at the top of your HealthConnectService.ts file
+type PermissionStatus = 'granted' | 'denied' | 'not_determined';
+
+interface Permission {
+  status?: PermissionStatus;
+  granted?: boolean;
+}
+
+interface PermissionResult {
+  status?: PermissionStatus;
+  [recordType: string]: Permission | PermissionStatus | undefined;
+}
+
 // Health Connect service class for managing interactions with Google Health Connect
 export class HealthConnectService {
     private static instance: HealthConnectService;
@@ -31,111 +44,129 @@ export class HealthConnectService {
     // Initialize Health Connect
     async initialize(): Promise<boolean> {
         if (!this.isAvailable()) {
-            console.log('Health Connect is not available on this platform');
-            return false;
+          console.log('Health Connect is not available on this platform');
+          return false;
         }
-
+      
         if (this.isInitialized) {
-            console.log('Health Connect already initialized');
-            return true;
+          console.log('Health Connect already initialized');
+          return true;
         }
-
+      
         try {
-            console.log('Initializing Health Connect...');
-            await initialize();
-            this.isInitialized = true;
-            console.log('Health Connect initialization successful');
-            return true;
-        } catch (error) {
-            console.error('Failed to initialize Health Connect:', error);
-            this.isInitialized = false;
+          console.log('Initializing Health Connect...');
+          
+          // First check if Health Connect is available on the device
+          if (Platform.OS !== 'android') {
+            console.log('Health Connect is only available on Android');
             return false;
+          }
+          
+          // Add a delay to ensure everything is loaded properly
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Initialize the Health Connect client
+          await initialize();
+          
+          // Set initialized flag
+          this.isInitialized = true;
+          console.log('Health Connect initialization successful');
+          return true;
+        } catch (error) {
+          console.error('Failed to initialize Health Connect:', error);
+          this.isInitialized = false;
+          return false;
         }
-    }
-
-    // Request permissions to access step data
-    async requestStepPermissions(): Promise<boolean> {
+      }
+      
+      // Ensure your requestStepPermissions method is robust
+      async requestStepPermissions(): Promise<boolean> {
         // Make sure we're on Android
         if (!this.isAvailable()) {
-            console.log('Health Connect is not available on this platform');
-            return false;
+          console.log('Health Connect is not available on this platform');
+          return false;
         }
-
+      
         // Always ensure we're initialized before requesting permissions
         if (!this.isInitialized) {
-            console.log('Health Connect not initialized, initializing now...');
-            const initSuccess = await this.initialize();
-            if (!initSuccess) {
-                console.error('Failed to initialize Health Connect before permission request');
-                return false;
-            }
+          console.log('Health Connect not initialized, initializing now...');
+          const initSuccess = await this.initialize();
+          if (!initSuccess) {
+            console.error('Failed to initialize Health Connect before permission request');
+            return false;
+          }
         }
-
+      
         try {
-            console.log('Requesting Health Connect permissions for steps...');
-            // Request permission for reading steps
-            const result = await requestPermission([
-                { recordType: 'Steps', accessType: 'read' }
-            ]);
-
-            // Check if we have the result object at all
-            if (!result) {
-                console.log('Permission request returned no result');
+          console.log('Requesting Health Connect permissions for steps...');
+          // Request permission for reading steps
+          const result = (await requestPermission([
+            { recordType: 'Steps', accessType: 'read' }
+          ])) as unknown as PermissionResult | boolean;
+      
+          // Check if we have the result object at all
+          if (!result) {
+            console.log('Permission request returned no result');
+            return false;
+          }
+      
+          console.log('Permission result received:', result);
+      
+          // Handle different response formats that might be returned
+          // by different versions of the library
+      
+          // If result is a simple boolean
+          if (typeof result === 'boolean') {
+            console.log('Permission result (boolean):', result);
+            return result;
+          }
+      
+          // If result is a simple object with a status field
+          if ('status' in result) {
+            const granted = result.status === 'granted';
+            console.log('Permission status:', granted ? 'granted' : 'denied');
+            return granted;
+          }
+      
+          // If result is an object with recordType keys
+          if (typeof result === 'object' && Object.keys(result).length > 0) {
+            // Check if any permission was explicitly denied
+            for (const key in result) {
+              const permission = result[key] as Permission | undefined;
+      
+              // If any permission is explicitly false or a boolean false, return false
+              if (typeof permission === 'boolean' && !permission) {
+                console.log(`Permission denied for ${key}`);
                 return false;
-            }
-
-            console.log('Permission result received:', result);
-
-            // Handle different response formats that might be returned
-            // by different versions of the library
-
-            // If result is a simple object with a status field
-            if ('status' in result) {
-                const granted = result.status === 'granted';
-                console.log('Permission status:', granted ? 'granted' : 'denied');
-                return granted;
-            }
-
-            // If result is a simple boolean
-            if (typeof result === 'boolean') {
-                console.log('Permission result (boolean):', result);
-                return result;
-            }
-
-            // If result is an object with recordType keys
-            if (typeof result === 'object' && Object.keys(result).length > 0) {
-                // Check if any permission was explicitly denied
-                for (const key in result) {
-                    const permission = result[key];
-
-                    // If any permission is explicitly false or a boolean false, return false
-                    if (typeof permission === 'boolean' && !permission) {
-                        console.log(`Permission denied for ${key}`);
-                        return false;
-                    }
-
-                    // Handle more complex permission objects
-                    if (typeof permission === 'object' && permission !== null) {
-                        if ('granted' in permission && !permission.granted) {
-                            console.log(`Permission denied for ${key} (complex object)`);
-                            return false;
-                        }
-                    }
+              }
+      
+              // Handle more complex permission objects
+              if (typeof permission === 'object' && permission !== null) {
+                if ('granted' in permission && !permission.granted) {
+                  console.log(`Permission denied for ${key} (complex object)`);
+                  return false;
                 }
-
-                // If we got here, no permissions were explicitly denied
-                console.log('All permissions appear to be granted');
-                return true;
+                
+                if ('status' in permission && permission.status !== 'granted') {
+                  console.log(`Permission denied for ${key} (status object)`);
+                  return false;
+                }
+              }
             }
-
-            // Default: assume permission not granted if we can't determine
-            console.log('Could not determine permission status from:', result);
-            return false;
+      
+            // If we got here, no permissions were explicitly denied
+            console.log('All permissions appear to be granted');
+            return true;
+          }
+      
+          // Default: assume permission not granted if we can't determine
+          console.log('Could not determine permission status from:', result);
+          return false;
         } catch (error) {
-            console.error('Failed to request Health Connect permissions:', error);
-            return false;
+          console.error('Failed to request Health Connect permissions:', error);
+          return false;
         }
-    }
+      }
 
     // Read step data for a specific time range
     async readSteps(startTime: string, endTime: string): Promise<any[]> {

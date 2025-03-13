@@ -42,8 +42,11 @@ export default function HealthConnectTestScreen() {
           // Initialize Health Connect with proper error handling
           const initialized = await healthConnectService.initialize();
           setIsInitialized(initialized);
-
+  
           if (initialized) {
+            // Add a delay before requesting permissions
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             // Only proceed with permission check if initialization succeeded
             await checkPermission();
             await loadLastSync();
