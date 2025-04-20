@@ -30,11 +30,11 @@
     <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    
+   
     <!-- ADD THESE TWO METADATA TAGS -->
     <meta-data android:name="androidx.health.connect.client.APP_ID" android:value="com.nikodemmech.MindMate" />
     <meta-data android:name="androidx.health.connect.PROVIDER" android:value="true" />
-    
+   
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
@@ -47,7 +47,7 @@
         <data android:scheme="com.nikodemmech.MindMate"/>
         <data android:scheme="exp+mindmate"/>
       </intent-filter>
-      
+     
       <!-- ADD THIS INTENT FILTER -->
       <intent-filter>
         <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
