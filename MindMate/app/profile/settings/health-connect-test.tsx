@@ -6,13 +6,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function HealthConnectTestScreen() {
   const router = useRouter();
-  const [hasPermissions, setHasPermissions] = useState(false);
-
-  // Handler for status updates from the HealthConnectComponent
-  const handleStatusChange = (status: { available: boolean; hasPermissions: boolean }) => {
-    console.log('Health Connect status update:', status);
-    setHasPermissions(status.hasPermissions);
-  };
+  const [hasPermissions] = useState(false);
 
   return (
     <>
