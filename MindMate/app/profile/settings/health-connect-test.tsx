@@ -1,6 +1,6 @@
 // app/profile/settings/health-connect-test.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, ActivityIndicator, Linking, Platform } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Pressable, ActivityIndicator, Linking, Platform, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { healthConnectService } from '@/services/HealthConnectService';
@@ -44,11 +44,8 @@ export default function HealthConnectTestScreen() {
           setIsInitialized(initialized);
   
           if (initialized) {
-            // Add a delay before requesting permissions
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Only proceed with permission check if initialization succeeded
-            await checkPermission();
+            // Try to check permissions by attempting to read data
+            await checkPermissionByReading();
             await loadLastSync();
           } else {
             setError('Health Connect failed to initialize');
@@ -67,22 +64,28 @@ export default function HealthConnectTestScreen() {
   };
 
   const openHealthConnect = async () => {
-    const playStoreUrl = 'market://details?id=com.google.android.apps.healthdata';
     try {
-      await Linking.openURL(playStoreUrl);
+      // First try to open the Health Connect app directly
+      await Linking.openURL('package:com.google.android.apps.healthdata');
     } catch {
-      // If Play Store fails, open in browser
-      await Linking.openURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
+      // If that fails, open the Play Store
+      try {
+        await Linking.openURL('market://details?id=com.google.android.apps.healthdata');
+      } catch {
+        // Fall back to browser
+        await Linking.openURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
+      }
     }
   };
 
-  const checkPermission = async () => {
+  // Check permissions by trying to read data
+  const checkPermissionByReading = async () => {
     setIsLoading(prev => ({ ...prev, permission: true }));
     try {
-      const granted = await healthConnectService.requestStepPermissions();
-      setHasPermission(granted);
+      const permissionGranted = await healthConnectService.checkPermission();
+      setHasPermission(permissionGranted);
       
-      if (granted) {
+      if (permissionGranted) {
         // Load data if permission granted
         loadTodaySteps();
         loadWeeklySteps();
@@ -90,8 +93,35 @@ export default function HealthConnectTestScreen() {
     } catch (error) {
       console.error('Error checking permissions:', error);
       setError('Failed to get Health Connect permissions');
+      setHasPermission(false);
     } finally {
       setIsLoading(prev => ({ ...prev, permission: false }));
+    }
+  };
+
+  // Handle permission request by opening Health Connect settings
+  const handlePermissionRequest = async () => {
+    try {
+      await healthConnectService.requestStepPermissions();
+      // Show an instruction message
+      Alert.alert(
+        "Permission Setup",
+        "In the Health Connect app that just opened, please grant access to your Steps data for MindMate.",
+        [
+          { 
+            text: "OK", 
+            onPress: () => {
+              // We'll check the permission status again after they return
+              setTimeout(() => {
+                checkPermissionByReading();
+              }, 1000);
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error requesting permissions:', error);
+      setError('Failed to open Health Connect for permissions');
     }
   };
 
@@ -234,12 +264,17 @@ export default function HealthConnectTestScreen() {
             )}
 
             {isInitialized && !hasPermission && (
-              <Pressable
-                style={styles.actionButton}
-                onPress={checkPermission}
-              >
-                <Text style={styles.actionButtonText}>Request Permissions</Text>
-              </Pressable>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  MindMate needs permission to access your step data from Health Connect.
+                </Text>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={handlePermissionRequest}
+                >
+                  <Text style={styles.actionButtonText}>Open Health Connect Settings</Text>
+                </Pressable>
+              </View>
             )}
           </View>
 
