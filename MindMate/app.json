@@ -14,6 +14,22 @@
     "web": {
       "bundler": "metro"
     },
+    "plugins": [
+      "react-native-health-connect",
+      "./androidManifestPlugin.js",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 26,
+            "extraProguardRules": "-keep class com.google.android.healthconnect.** { *; }\n-keep class androidx.health.connect.** { *; }"
+          }
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "tsconfigPaths": true
@@ -38,7 +54,23 @@
       "fallbackToCacheTimeout": 0
     },
     "android": {
-      "package": "com.nikodemmech.MindMate"
+      "package": "com.nikodemmech.MindMate",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "INTERNET",
+        "MODIFY_AUDIO_SETTINGS",
+        "READ_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "RECORD_AUDIO",
+        "SYSTEM_ALERT_WINDOW",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.WRITE_STEPS"
+      ]
     }
   }
 }
