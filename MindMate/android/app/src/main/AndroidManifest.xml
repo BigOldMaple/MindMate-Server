@@ -15,6 +15,9 @@
   <!-- Health Connect permissions -->
   <uses-permission android:name="android.permission.health.READ_STEPS"/>
   <uses-permission android:name="android.permission.health.WRITE_STEPS"/>
+  <!-- Add these new permissions for distance tracking -->
+  <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
+  <uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
  
   <queries>
     <intent>
@@ -53,5 +56,26 @@
         <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
       </intent-filter>
     </activity>
+    
+    <!-- Add this for Android 13 and below permissions rationale -->
+    <activity
+      android:name=".PermissionsRationaleActivity"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+      </intent-filter>
+    </activity>
+    
+    <!-- Add this for Android 14+ permissions rationale -->
+    <activity-alias
+      android:name="ViewPermissionUsageActivity"
+      android:exported="true"
+      android:targetActivity=".MainActivity"
+      android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+        <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+      </intent-filter>
+    </activity-alias>
   </application>
 </manifest>

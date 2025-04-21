@@ -17,6 +17,13 @@ import * as TaskManager from 'expo-task-manager';
 import * as Linking from 'expo-linking';
 import { Camera } from 'expo-camera';
 import * as Audio from 'expo-av';
+// Import the Health Connect services
+import { 
+  initializeHealthConnect, 
+  checkHealthConnectAvailability, 
+  SdkAvailabilityStatus 
+} from '@/services/healthConnectService';
+import { registerBackgroundHealthFetch } from '@/services/backgroundHealthService';
 
 // Prevent specific warnings from showing in development
 LogBox.ignoreLogs([
@@ -357,17 +364,51 @@ export default function RootLayout() {
           // Request permissions and show educational alerts if needed
           const permissions = await requestPermissions();
           
-          // For debugging purposes, check Android manifest permissions
+          // Initialize Health Connect on Android
           if (Platform.OS === 'android') {
+            try {
+              console.log('Initializing Health Connect...');
+              
+              // Check if Health Connect is available
+              const status = await checkHealthConnectAvailability();
+              if (status === SdkAvailabilityStatus.SDK_AVAILABLE) {
+                console.log('Health Connect is available');
+                
+                // Initialize Health Connect
+                const initialized = await initializeHealthConnect();
+                if (initialized) {
+                  console.log('Health Connect initialized successfully');
+                  
+                  // Register background health fetch for step and distance tracking
+                  const registered = await registerBackgroundHealthFetch();
+                  if (registered) {
+                    console.log('Background health fetch registered successfully');
+                  } else {
+                    console.log('Failed to register background health fetch');
+                  }
+                } else {
+                  console.log('Failed to initialize Health Connect');
+                }
+              } else if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
+                console.log('Health Connect requires an update');
+                // You could show an alert here to prompt the user to update Health Connect
+              } else {
+                console.log('Health Connect is not available on this device');
+              }
+            } catch (e) {
+              console.log('Error initializing Health Connect:', e);
+            }
+            
+            // Log permissions being used
             try {
               console.log('Checking Android manifest permissions...');
               console.log('Android version:', Platform.Version);
-              // We can't actually read the manifest at runtime, but we can log what permissions we're using
               console.log('App is using these permissions from AndroidManifest.xml:');
               console.log('- ACTIVITY_RECOGNITION (for physical activity)');
               console.log('- CAMERA');
               console.log('- MICROPHONE');
               console.log('- LOCATION');
+              console.log('- HEALTH_CONNECT (for steps and distance tracking)');
             } catch (e) {
               console.log('Could not log permissions:', e);
             }
