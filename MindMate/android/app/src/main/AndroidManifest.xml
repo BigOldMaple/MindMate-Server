@@ -15,9 +15,12 @@
   <!-- Health Connect permissions -->
   <uses-permission android:name="android.permission.health.READ_STEPS"/>
   <uses-permission android:name="android.permission.health.WRITE_STEPS"/>
-  <!-- Add these new permissions for distance tracking -->
+
   <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
   <uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
+
+  <uses-permission android:name="android.permission.health.READ_SLEEP"/>
+  <uses-permission android:name="android.permission.health.WRITE_SLEEP"/>
  
   <queries>
     <intent>

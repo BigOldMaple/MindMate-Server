@@ -7,10 +7,17 @@ import {
   initializeHealthConnect,
   checkHealthConnectAvailability,
   requestHealthConnectPermissions,
+  requestSleepPermissions,
+  requestAllHealthPermissions,
   getHealthConnectPermissions,
   getAggregatedSteps,
   getAggregatedDistance,
   openHealthSettings,
+  readSleepSessions,
+  getTotalSleepTime,
+  formatSleepDuration,
+  getSleepQualityDescription,
+  formatDistance,
   SdkAvailabilityStatus,
 } from '@/services/healthConnectService';
 
@@ -18,29 +25,32 @@ export default function HealthConnectTestScreen() {
   const router = useRouter();
   const [isHealthConnectAvailable, setIsHealthConnectAvailable] = useState<boolean>(false);
   const [hasPermissions, setHasPermissions] = useState<boolean>(false);
+  const [hasSleepPermissions, setHasSleepPermissions] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [stepsData, setStepsData] = useState<any>(null);
   const [distanceData, setDistanceData] = useState<any>(null);
+  const [sleepData, setSleepData] = useState<any>(null);
+  const [lastNightSleep, setLastNightSleep] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkHealthConnect = async () => {
       try {
         setIsLoading(true);
-        
+
         // Only continue if on Android
         if (Platform.OS !== 'android') {
           setError('Health Connect is only available on Android devices');
           setIsLoading(false);
           return;
         }
-        
+
         // Check if Health Connect is available
         const status = await checkHealthConnectAvailability();
         const available = status === SdkAvailabilityStatus.SDK_AVAILABLE;
         setIsHealthConnectAvailable(available);
-        
+
         if (!available) {
           if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
             setError('Health Connect is available but requires an update');
@@ -50,7 +60,7 @@ export default function HealthConnectTestScreen() {
           setIsLoading(false);
           return;
         }
-        
+
         // Initialize Health Connect
         const initialized = await initializeHealthConnect();
         if (!initialized) {
@@ -58,16 +68,26 @@ export default function HealthConnectTestScreen() {
           setIsLoading(false);
           return;
         }
-        
+
         // Check if we have permissions
         const permissions = await getHealthConnectPermissions();
         const hasStepsPermission = permissions.some(
           (p) => p.recordType === 'Steps' && p.accessType === 'read'
         );
+
+        const hasSleepPermission = permissions.some(
+          (p) => p.recordType === 'SleepSession' && p.accessType === 'read'
+        );
+
         setHasPermissions(hasStepsPermission);
-        
+        setHasSleepPermissions(hasSleepPermission);
+
         if (hasStepsPermission) {
           await fetchHealthData();
+        }
+
+        if (hasSleepPermission) {
+          await fetchSleepData();
         }
       } catch (err) {
         console.error('Error in Health Connect initialization:', err);
@@ -76,7 +96,7 @@ export default function HealthConnectTestScreen() {
         setIsLoading(false);
       }
     };
-    
+
     checkHealthConnect();
   }, []);
 
@@ -86,10 +106,10 @@ export default function HealthConnectTestScreen() {
       // Fetch data for the last 7 days
       const endTime = new Date().toISOString();
       const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      
+
       const steps = await getAggregatedSteps(startTime, endTime);
       setStepsData(steps);
-      
+
       const distance = await getAggregatedDistance(startTime, endTime);
       setDistanceData(distance);
     } catch (err) {
@@ -100,17 +120,60 @@ export default function HealthConnectTestScreen() {
     }
   };
 
-  const handleRequestPermissions = async () => {
+  const fetchSleepData = async () => {
+    try {
+      setIsLoadingData(true);
+
+      // Fetch data for the last 7 days
+      const endTime = new Date().toISOString();
+      const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Get total sleep time
+      const totalSleep = await getTotalSleepTime(startTime, endTime);
+      setSleepData(totalSleep);
+
+      // Get individual sleep sessions
+      const sleepSessions = await readSleepSessions(startTime, endTime);
+      console.log('Sleep sessions:', sleepSessions.length);
+
+      // Find the most recent sleep session (last night)
+      if (sleepSessions.length > 0) {
+        // Sort by start time, most recent first
+        const sortedSessions = [...sleepSessions].sort((a, b) =>
+          new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        );
+        setLastNightSleep(sortedSessions[0]);
+      }
+    } catch (err) {
+      console.error('Error fetching sleep data:', err);
+      setError('Failed to fetch sleep data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleRequestAllPermissions = async () => {
     try {
       setIsLoading(true);
-      const permissions = await requestHealthConnectPermissions();
+      const permissions = await requestAllHealthPermissions();
+
       const hasStepsPermission = permissions.some(
         (p) => p.recordType === 'Steps' && p.accessType === 'read'
       );
+
+      const hasSleepPermission = permissions.some(
+        (p) => p.recordType === 'SleepSession' && p.accessType === 'read'
+      );
+
       setHasPermissions(hasStepsPermission);
-      
+      setHasSleepPermissions(hasSleepPermission);
+
       if (hasStepsPermission) {
         await fetchHealthData();
+      }
+
+      if (hasSleepPermission) {
+        await fetchSleepData();
       }
     } catch (err) {
       console.error('Error requesting permissions:', err);
@@ -120,23 +183,68 @@ export default function HealthConnectTestScreen() {
     }
   };
 
+  const handleRequestActivityPermissions = async () => {
+    try {
+      setIsLoading(true);
+      const permissions = await requestHealthConnectPermissions();
+      const hasStepsPermission = permissions.some(
+        (p) => p.recordType === 'Steps' && p.accessType === 'read'
+      );
+      setHasPermissions(hasStepsPermission);
+
+      if (hasStepsPermission) {
+        await fetchHealthData();
+      }
+    } catch (err) {
+      console.error('Error requesting activity permissions:', err);
+      setError('Failed to request activity permissions');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRequestSleepPermissions = async () => {
+    try {
+      setIsLoading(true);
+      const permissions = await requestSleepPermissions();
+      const hasSleepPermission = permissions.some(
+        (p) => p.recordType === 'SleepSession' && p.accessType === 'read'
+      );
+      setHasSleepPermissions(hasSleepPermission);
+
+      if (hasSleepPermission) {
+        await fetchSleepData();
+      }
+    } catch (err) {
+      console.error('Error requesting sleep permissions:', err);
+      setError('Failed to request sleep permissions');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleOpenSettings = () => {
     openHealthSettings();
   };
 
-  // Format distance to 2 decimal places and add unit
-  const formatDistance = (distanceData: any) => {
-    if (!distanceData) return '0 m';
-    
-    // The actual distance is nested inside the DISTANCE property
-    const distance = distanceData.DISTANCE;
-    if (!distance || !distance.inMeters) return '0 m';
-    
-    if (distance.inMeters >= 1000) {
-      return `${(distance.inMeters / 1000).toFixed(2)} km`;
-    } else {
-      return `${Math.round(distance.inMeters)} m`;
-    }
+  // Helper functions for sleep data
+  const formatSleepTime = (isoString: string | null | undefined): string => {
+    if (!isoString) return 'N/A';
+
+    const date = new Date(isoString);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+
+    return `${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
+  };
+
+  const calculateSleepDuration = (startTime: string | null | undefined, endTime: string | null | undefined): number => {
+    if (!startTime || !endTime) return 0;
+
+    const start = new Date(startTime).getTime();
+    const end = new Date(endTime).getTime();
+
+    return end - start;
   };
 
   return (
@@ -166,36 +274,48 @@ export default function HealthConnectTestScreen() {
               {/* Status Section */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Health Connect Status</Text>
-                
+
                 <View style={styles.statusRow}>
                   <Text style={styles.statusLabel}>Available:</Text>
                   <Text style={[
-                    styles.statusValue, 
+                    styles.statusValue,
                     { color: isHealthConnectAvailable ? '#00c853' : '#f44336' }
                   ]}>
                     {isHealthConnectAvailable ? 'Yes' : 'No'}
                   </Text>
                 </View>
-                
+
                 {isHealthConnectAvailable && (
-                  <View style={styles.statusRow}>
-                    <Text style={styles.statusLabel}>Permissions:</Text>
-                    <Text style={[
-                      styles.statusValue, 
-                      { color: hasPermissions ? '#00c853' : '#f44336' }
-                    ]}>
-                      {hasPermissions ? 'Granted' : 'Not Granted'}
-                    </Text>
-                  </View>
+                  <>
+                    <View style={styles.statusRow}>
+                      <Text style={styles.statusLabel}>Activity Permissions:</Text>
+                      <Text style={[
+                        styles.statusValue,
+                        { color: hasPermissions ? '#00c853' : '#f44336' }
+                      ]}>
+                        {hasPermissions ? 'Granted' : 'Not Granted'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.statusRow}>
+                      <Text style={styles.statusLabel}>Sleep Permissions:</Text>
+                      <Text style={[
+                        styles.statusValue,
+                        { color: hasSleepPermissions ? '#00c853' : '#f44336' }
+                      ]}>
+                        {hasSleepPermissions ? 'Granted' : 'Not Granted'}
+                      </Text>
+                    </View>
+                  </>
                 )}
-                
+
                 {error && (
                   <View style={styles.errorContainer}>
                     <FontAwesome name="exclamation-triangle" size={16} color="#f44336" />
                     <Text style={styles.errorText}>{error}</Text>
                   </View>
                 )}
-                
+
                 <View style={styles.buttonRow}>
                   {!isHealthConnectAvailable && (
                     <Pressable
@@ -205,20 +325,41 @@ export default function HealthConnectTestScreen() {
                       <Text style={styles.buttonText}>Install Health Connect</Text>
                     </Pressable>
                   )}
-                  
+
+                  {isHealthConnectAvailable && (!hasPermissions || !hasSleepPermissions) && (
+                    <Pressable
+                      style={styles.button}
+                      onPress={handleRequestAllPermissions}
+                    >
+                      <Text style={styles.buttonText}>Request All Permissions</Text>
+                    </Pressable>
+                  )}
+
                   {isHealthConnectAvailable && !hasPermissions && (
                     <Pressable
                       style={styles.button}
-                      onPress={handleRequestPermissions}
+                      onPress={handleRequestActivityPermissions}
                     >
-                      <Text style={styles.buttonText}>Request Permissions</Text>
+                      <Text style={styles.buttonText}>Activity Permissions</Text>
                     </Pressable>
                   )}
-                  
-                  {isHealthConnectAvailable && hasPermissions && (
+
+                  {isHealthConnectAvailable && !hasSleepPermissions && (
                     <Pressable
                       style={styles.button}
-                      onPress={fetchHealthData}
+                      onPress={handleRequestSleepPermissions}
+                    >
+                      <Text style={styles.buttonText}>Sleep Permissions</Text>
+                    </Pressable>
+                  )}
+
+                  {isHealthConnectAvailable && (hasPermissions || hasSleepPermissions) && (
+                    <Pressable
+                      style={styles.button}
+                      onPress={() => {
+                        if (hasPermissions) fetchHealthData();
+                        if (hasSleepPermissions) fetchSleepData();
+                      }}
                       disabled={isLoadingData}
                     >
                       {isLoadingData ? (
@@ -228,7 +369,7 @@ export default function HealthConnectTestScreen() {
                       )}
                     </Pressable>
                   )}
-                  
+
                   {isHealthConnectAvailable && (
                     <Pressable
                       style={[styles.button, styles.secondaryButton]}
@@ -243,8 +384,8 @@ export default function HealthConnectTestScreen() {
               {/* Health Data Section */}
               {hasPermissions && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Health Data (Last 7 Days)</Text>
-                  
+                  <Text style={styles.cardTitle}>Activity Data (Last 7 Days)</Text>
+
                   {isLoadingData ? (
                     <View style={styles.centerContainer}>
                       <ActivityIndicator size="small" color="#0066cc" />
@@ -259,7 +400,7 @@ export default function HealthConnectTestScreen() {
                           {stepsData?.COUNT_TOTAL || 0}
                         </Text>
                       </View>
-                      
+
                       {/* Distance Data */}
                       <View style={styles.dataContainer}>
                         <Text style={styles.dataLabel}>Total Distance:</Text>
@@ -267,16 +408,104 @@ export default function HealthConnectTestScreen() {
                           {distanceData ? formatDistance(distanceData) : '0 m'}
                         </Text>
                       </View>
-                      
+
                       <Text style={styles.dataSourceText}>
                         Data Sources: {stepsData?.dataOrigins?.join(', ') || 'None'}
                       </Text>
-                      
-                      {(!stepsData?.COUNT_TOTAL && !distanceData?.inMeters) && (
+
+                      {(!stepsData?.COUNT_TOTAL && !distanceData?.DISTANCE?.inMeters) && (
                         <Text style={styles.noDataText}>
-                          No health data available for the last 7 days. Try recording some activity with a fitness app that integrates with Health Connect.
+                          No activity data available for the last 7 days. Try recording some activity with a fitness app that integrates with Health Connect.
                         </Text>
                       )}
+                    </>
+                  )}
+                </View>
+              )}
+
+              {/* Sleep Data Section */}
+              {hasSleepPermissions && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Sleep Data (Last 7 Days)</Text>
+
+                  {isLoadingData ? (
+                    <View style={styles.centerContainer}>
+                      <ActivityIndicator size="small" color="#0066cc" />
+                      <Text style={styles.loadingText}>Loading sleep data...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {/* Weekly Total */}
+                      <View style={styles.dataContainer}>
+                        <Text style={styles.dataLabel}>Total Sleep:</Text>
+                        <Text style={styles.dataValue}>
+                          {sleepData?.SLEEP_DURATION_TOTAL
+                            ? formatSleepDuration(sleepData.SLEEP_DURATION_TOTAL * 1000) // Convert seconds to milliseconds
+                            : 'No data'}
+                        </Text>
+                      </View>
+
+                      {/* Last Night's Sleep */}
+                      {lastNightSleep && (
+                        <>
+                          <Text style={styles.subheading}>Last Recorded Sleep:</Text>
+                          <View style={styles.sleepDetail}>
+                            <Text style={styles.sleepLabel}>Bedtime:</Text>
+                            <Text style={styles.sleepValue}>{formatSleepTime(lastNightSleep.startTime)}</Text>
+                          </View>
+                          <View style={styles.sleepDetail}>
+                            <Text style={styles.sleepLabel}>Wake time:</Text>
+                            <Text style={styles.sleepValue}>{formatSleepTime(lastNightSleep.endTime)}</Text>
+                          </View>
+                          <View style={styles.sleepDetail}>
+                            <Text style={styles.sleepLabel}>Duration:</Text>
+                            <Text style={styles.sleepValue}>
+                              {formatSleepDuration(calculateSleepDuration(
+                                lastNightSleep.startTime,
+                                lastNightSleep.endTime
+                              ))}
+                            </Text>
+                          </View>
+                          {lastNightSleep.notes && (
+                            <View style={styles.sleepDetail}>
+                              <Text style={styles.sleepLabel}>Notes:</Text>
+                              <Text style={styles.sleepValue}>{lastNightSleep.notes}</Text>
+                            </View>
+                          )}
+
+                          {/* Sleep Quality Assessment */}
+                          {(() => {
+                            const duration = calculateSleepDuration(
+                              lastNightSleep.startTime,
+                              lastNightSleep.endTime
+                            );
+                            const quality = getSleepQualityDescription(duration);
+                            return (
+                              <View style={[
+                                styles.sleepQuality,
+                                {
+                                  backgroundColor:
+                                    quality.quality === 'good' ? '#e8f5e9' :
+                                      quality.quality === 'fair' ? '#fff8e1' :
+                                        '#ffebee'
+                                }
+                              ]}>
+                                <Text style={styles.sleepQualityText}>{quality.description}</Text>
+                              </View>
+                            );
+                          })()}
+                        </>
+                      )}
+
+                      {!lastNightSleep && !sleepData?.DURATION && (
+                        <Text style={styles.noDataText}>
+                          No sleep sessions recorded in the last 7 days. Try using a sleep tracking app that integrates with Health Connect.
+                        </Text>
+                      )}
+
+                      <Text style={styles.dataSourceText}>
+                        Data Sources: {sleepData?.dataOrigins?.join(', ') || 'None'}
+                      </Text>
                     </>
                   )}
                 </View>
@@ -286,8 +515,8 @@ export default function HealthConnectTestScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>About Health Connect</Text>
                 <Text style={styles.infoText}>
-                  Health Connect allows fitness apps to share health and fitness data with each other.
-                  This enables MindMate to retrieve step and distance data from Health Connect, even when collected by other fitness apps.
+                  Health Connect allows apps to share health and fitness data with each other.
+                  This enables MindMate to retrieve activity and sleep data from Health Connect, even when collected by other apps.
                 </Text>
                 <Text style={styles.infoText}>
                   For this to work, you need:
@@ -295,10 +524,10 @@ export default function HealthConnectTestScreen() {
                 <View style={styles.bulletList}>
                   <Text style={styles.bulletPoint}>• An Android device (Android 9 or higher)</Text>
                   <Text style={styles.bulletPoint}>• Health Connect app installed</Text>
-                  <Text style={styles.bulletPoint}>• At least one fitness app that shares data with Health Connect</Text>
+                  <Text style={styles.bulletPoint}>• At least one health app that shares data with Health Connect</Text>
                 </View>
                 <Text style={styles.infoText}>
-                  This feature allows MindMate to track your physical activity even when the app is closed.
+                  Tracking both physical activity and sleep patterns can provide valuable insights into your mental wellbeing.
                 </Text>
               </View>
             </>
@@ -473,5 +702,38 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
     lineHeight: 20,
+  },
+  // New styles for sleep section
+  subheading: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+    color: '#333',
+  },
+  sleepDetail: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  sleepLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  sleepValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  sleepQuality: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 6,
+  },
+  sleepQualityText: {
+    fontSize: 14,
+    color: '#333',
   },
 });
