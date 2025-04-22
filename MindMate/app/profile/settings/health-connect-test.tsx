@@ -1,8 +1,9 @@
 // app/profile/settings/health-connect-test.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Pressable, Platform, ActivityIndicator, Modal } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   initializeHealthConnect,
   checkHealthConnectAvailability,
@@ -25,7 +26,16 @@ import {
   getExerciseTypeName,
   ExerciseType,
   SdkAvailabilityStatus,
+  getTimeRangeForLastDay,
+  getTimeRangeForLastWeek,
+  getTimeRangeForLastMonth,
+  getTimeRangeForLastYear,
+  getTimeRangeForSpecificDay,
+  formatDateRangeLabel,
 } from '@/services/healthConnectService';
+
+// Define time range type
+type TimeRange = 'day' | 'week' | 'month' | 'year' | 'specific';
 
 export default function HealthConnectTestScreen() {
   const router = useRouter();
@@ -42,6 +52,75 @@ export default function HealthConnectTestScreen() {
   const [exerciseData, setExerciseData] = useState<any>(null);
   const [exerciseSessions, setExerciseSessions] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  // Add new state variables for time range selection
+  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRange>('week');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
+  const [dateRangeLabel, setDateRangeLabel] = useState<string>('Last 7 Days');
+
+  // Helper function to get the time range based on selection
+  const getTimeRange = (): { startTime: string, endTime: string } => {
+    switch (selectedTimeRange) {
+      case 'day':
+        return getTimeRangeForLastDay();
+      case 'week':
+        return getTimeRangeForLastWeek();
+      case 'month':
+        return getTimeRangeForLastMonth();
+      case 'year':
+        return getTimeRangeForLastYear();
+      case 'specific':
+        return getTimeRangeForSpecificDay(selectedDate);
+      default:
+        return getTimeRangeForLastWeek(); // Default to week
+    }
+  };
+
+  // Helper function to update the date range label
+  const updateDateRangeLabel = () => {
+    setDateRangeLabel(formatDateRangeLabel(selectedTimeRange, selectedTimeRange === 'specific' ? selectedDate : undefined));
+  };
+
+  // Helper function to fetch all relevant data
+  const fetchAllData = async () => {
+    updateDateRangeLabel();
+    if (hasPermissions) await fetchHealthData();
+    if (hasSleepPermissions) await fetchSleepData();
+    if (hasExercisePermissions) await fetchExerciseData();
+  };
+
+  // Time range change handler
+  const handleTimeRangeChange = (newRange: TimeRange) => {
+    // Don't do anything if already on this range and loading
+    if (newRange === selectedTimeRange && isLoadingData) return;
+    
+    setSelectedTimeRange(newRange);
+    
+    // Set loading state for affected sections
+    setIsLoadingData(true);
+    
+    // Update range label immediately for better UX
+    setDateRangeLabel(formatDateRangeLabel(
+      newRange, 
+      newRange === 'specific' ? selectedDate : undefined
+    ));
+    
+    // Data fetching will happen via useEffect when selectedTimeRange changes
+  };
+
+  // Date change handler
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+    
+    // If we're in specific date mode, reload the data
+    if (selectedTimeRange === 'specific') {
+      setIsLoadingData(true);
+      setDateRangeLabel(formatDateRangeLabel('specific', date));
+      // Data fetching will happen via useEffect when selectedDate changes
+    }
+  };
 
   useEffect(() => {
     const checkHealthConnect = async () => {
@@ -97,16 +176,12 @@ export default function HealthConnectTestScreen() {
         setHasSleepPermissions(hasSleepPermission);
         setHasExercisePermissions(hasExercisePermission);
 
-        if (hasStepsPermission) {
-          await fetchHealthData();
-        }
+        // Set initial date range label
+        updateDateRangeLabel();
 
-        if (hasSleepPermission) {
-          await fetchSleepData();
-        }
-
-        if (hasExercisePermission) {
-          await fetchExerciseData();
+        // Fetch data if we have the permissions
+        if (hasStepsPermission || hasSleepPermission || hasExercisePermission) {
+          await fetchAllData();
         }
       } catch (err) {
         console.error('Error in Health Connect initialization:', err);
@@ -119,12 +194,18 @@ export default function HealthConnectTestScreen() {
     checkHealthConnect();
   }, []);
 
+  // Effect to refetch data when time range or date changes
+  useEffect(() => {
+    if (isHealthConnectAvailable && !isLoading && (hasPermissions || hasSleepPermissions || hasExercisePermissions)) {
+      fetchAllData();
+    }
+  }, [selectedTimeRange, selectedDate]);
+
   const fetchHealthData = async () => {
     try {
       setIsLoadingData(true);
-      // Fetch data for the last 7 days
-      const endTime = new Date().toISOString();
-      const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      // Get time range based on selection
+      const { startTime, endTime } = getTimeRange();
 
       const steps = await getAggregatedSteps(startTime, endTime);
       setStepsData(steps);
@@ -142,10 +223,8 @@ export default function HealthConnectTestScreen() {
   const fetchSleepData = async () => {
     try {
       setIsLoadingData(true);
-
-      // Fetch data for the last 7 days
-      const endTime = new Date().toISOString();
-      const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      // Get time range based on selection
+      const { startTime, endTime } = getTimeRange();
 
       // Get total sleep time
       const totalSleep = await getTotalSleepTime(startTime, endTime);
@@ -162,6 +241,8 @@ export default function HealthConnectTestScreen() {
           new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
         );
         setLastNightSleep(sortedSessions[0]);
+      } else {
+        setLastNightSleep(null);
       }
     } catch (err) {
       console.error('Error fetching sleep data:', err);
@@ -174,10 +255,8 @@ export default function HealthConnectTestScreen() {
   const fetchExerciseData = async () => {
     try {
       setIsLoadingData(true);
-
-      // Fetch data for the last 7 days
-      const endTime = new Date().toISOString();
-      const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      // Get time range based on selection
+      const { startTime, endTime } = getTimeRange();
 
       // Get exercise stats
       const exerciseStats = await getTotalExerciseStats(startTime, endTime);
@@ -230,17 +309,7 @@ export default function HealthConnectTestScreen() {
       setHasSleepPermissions(hasSleepPermission);
       setHasExercisePermissions(hasExercisePermission);
 
-      if (hasStepsPermission) {
-        await fetchHealthData();
-      }
-
-      if (hasSleepPermission) {
-        await fetchSleepData();
-      }
-
-      if (hasExercisePermission) {
-        await fetchExerciseData();
-      }
+      await fetchAllData();
     } catch (err) {
       console.error('Error requesting permissions:', err);
       setError('Failed to request permissions');
@@ -472,11 +541,7 @@ export default function HealthConnectTestScreen() {
                   {isHealthConnectAvailable && (hasPermissions || hasSleepPermissions || hasExercisePermissions) && (
                     <Pressable
                       style={styles.button}
-                      onPress={() => {
-                        if (hasPermissions) fetchHealthData();
-                        if (hasSleepPermissions) fetchSleepData();
-                        if (hasExercisePermissions) fetchExerciseData();
-                      }}
+                      onPress={fetchAllData}
                       disabled={isLoadingData}
                     >
                       {isLoadingData ? (
@@ -498,10 +563,161 @@ export default function HealthConnectTestScreen() {
                 </View>
               </View>
 
+              {/* Time Range Selection Section */}
+              {isHealthConnectAvailable && (hasPermissions || hasSleepPermissions || hasExercisePermissions) && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Select Time Range</Text>
+                  
+                  {/* Time Range Selector */}
+                  <View style={styles.segmentedControl}>
+                    <Pressable
+                      style={[
+                        styles.segment,
+                        selectedTimeRange === 'day' && styles.selectedSegment
+                      ]}
+                      onPress={() => handleTimeRangeChange('day')}
+                    >
+                      <Text style={[
+                        styles.segmentText,
+                        selectedTimeRange === 'day' && styles.selectedSegmentText
+                      ]}>Day</Text>
+                    </Pressable>
+                    
+                    <Pressable
+                      style={[
+                        styles.segment,
+                        selectedTimeRange === 'week' && styles.selectedSegment
+                      ]}
+                      onPress={() => handleTimeRangeChange('week')}
+                    >
+                      <Text style={[
+                        styles.segmentText,
+                        selectedTimeRange === 'week' && styles.selectedSegmentText
+                      ]}>Week</Text>
+                    </Pressable>
+                    
+                    <Pressable
+                      style={[
+                        styles.segment,
+                        selectedTimeRange === 'month' && styles.selectedSegment
+                      ]}
+                      onPress={() => handleTimeRangeChange('month')}
+                    >
+                      <Text style={[
+                        styles.segmentText,
+                        selectedTimeRange === 'month' && styles.selectedSegmentText
+                      ]}>Month</Text>
+                    </Pressable>
+                    
+                    <Pressable
+                      style={[
+                        styles.segment,
+                        selectedTimeRange === 'year' && styles.selectedSegment
+                      ]}
+                      onPress={() => handleTimeRangeChange('year')}
+                    >
+                      <Text style={[
+                        styles.segmentText,
+                        selectedTimeRange === 'year' && styles.selectedSegmentText
+                      ]}>Year</Text>
+                    </Pressable>
+                  </View>
+                  
+                  {/* Specific Date Selector */}
+                  <View style={styles.dateSelector}>
+                    <Text style={styles.dateLabel}>Select Specific Date:</Text>
+                    <Pressable
+                      style={styles.datePicker}
+                      onPress={() => setShowDatePicker(true)}
+                    >
+                      <Text style={styles.dateText}>
+                        {selectedDate.toLocaleDateString()}
+                      </Text>
+                      <FontAwesome name="calendar" size={16} color="#666" />
+                    </Pressable>
+                    
+                    <Pressable
+                      style={[
+                        styles.specificDateButton,
+                        selectedTimeRange === 'specific' && styles.selectedSpecificButton
+                      ]}
+                      onPress={() => handleTimeRangeChange('specific')}
+                    >
+                      <Text style={[
+                        styles.specificDateButtonText,
+                        selectedTimeRange === 'specific' && styles.selectedSpecificButtonText
+                      ]}>View This Date</Text>
+                    </Pressable>
+                  </View>
+                  
+                  {/* Current Time Range Label */}
+                  <View style={styles.currentTimeRange}>
+                    <FontAwesome name="clock-o" size={16} color="#666" style={styles.timeIcon} />
+                    <Text style={styles.timeRangeText}>Showing data for: {dateRangeLabel}</Text>
+                  </View>
+
+                  {/* Date Picker Modal for Android */}
+                  {showDatePicker && Platform.OS === 'android' && (
+                    <DateTimePicker
+                      value={selectedDate}
+                      mode="date"
+                      display="default"
+                      onChange={(event, date) => {
+                        setShowDatePicker(false);
+                        if (date) {
+                          handleDateChange(date);
+                        }
+                      }}
+                      maximumDate={new Date()}
+                    />
+                  )}
+
+                  {/* Date Picker Modal for iOS */}
+                  {Platform.OS === 'ios' && (
+                    <Modal
+                      animationType="slide"
+                      transparent={true}
+                      visible={showDatePicker}
+                      onRequestClose={() => setShowDatePicker(false)}
+                    >
+                      <View style={styles.centeredView}>
+                        <View style={styles.modalView}>
+                          <DateTimePicker
+                            value={selectedDate}
+                            mode="date"
+                            display="spinner"
+                            onChange={(event, date) => {
+                              if (date) {
+                                setSelectedDate(date);
+                              }
+                            }}
+                            maximumDate={new Date()}
+                          />
+                          <View style={styles.modalButtons}>
+                            <Pressable
+                              style={[styles.button, styles.modalButton]}
+                              onPress={() => setShowDatePicker(false)}
+                            >
+                              <Text style={styles.buttonText}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.button, styles.modalButton]}
+                              onPress={() => handleDateChange(selectedDate)}
+                            >
+                              <Text style={styles.buttonText}>Confirm</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+                    </Modal>
+                  )}
+                </View>
+              )}
+
               {/* Health Data Section */}
               {hasPermissions && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Activity Data (Last 7 Days)</Text>
+                  <Text style={styles.cardTitle}>Activity Data ({dateRangeLabel})</Text>
 
                   {isLoadingData ? (
                     <View style={styles.centerContainer}>
@@ -532,7 +748,7 @@ export default function HealthConnectTestScreen() {
 
                       {(!stepsData?.COUNT_TOTAL && !distanceData?.DISTANCE?.inMeters) && (
                         <Text style={styles.noDataText}>
-                          No activity data available for the last 7 days. Try recording some activity with a fitness app that integrates with Health Connect.
+                          No activity data available for this time period. Try recording some activity with a fitness app that integrates with Health Connect.
                         </Text>
                       )}
                     </>
@@ -543,7 +759,7 @@ export default function HealthConnectTestScreen() {
               {/* Sleep Data Section */}
               {hasSleepPermissions && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Sleep Data (Last 7 Days)</Text>
+                  <Text style={styles.cardTitle}>Sleep Data ({dateRangeLabel})</Text>
 
                   {isLoadingData ? (
                     <View style={styles.centerContainer}>
@@ -565,7 +781,11 @@ export default function HealthConnectTestScreen() {
                       {/* Last Night's Sleep */}
                       {lastNightSleep && (
                         <>
-                          <Text style={styles.subheading}>Last Recorded Sleep:</Text>
+                          <Text style={styles.subheading}>
+                            {selectedTimeRange === 'specific' 
+                              ? 'Sleep Session on this Date:' 
+                              : 'Most Recent Sleep Session:'}
+                          </Text>
                           <View style={styles.sleepDetail}>
                             <Text style={styles.sleepLabel}>Bedtime:</Text>
                             <Text style={styles.sleepValue}>{formatSleepTime(lastNightSleep.startTime)}</Text>
@@ -616,7 +836,7 @@ export default function HealthConnectTestScreen() {
 
                       {!lastNightSleep && !sleepData?.SLEEP_DURATION_TOTAL && (
                         <Text style={styles.noDataText}>
-                          No sleep sessions recorded in the last 7 days. Try using a sleep tracking app that integrates with Health Connect.
+                          No sleep sessions recorded for this time period. Try using a sleep tracking app that integrates with Health Connect.
                         </Text>
                       )}
 
@@ -631,7 +851,7 @@ export default function HealthConnectTestScreen() {
               {/* Exercise Data Section */}
               {hasExercisePermissions && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Exercise Data (Last 7 Days)</Text>
+                  <Text style={styles.cardTitle}>Exercise Data ({dateRangeLabel})</Text>
 
                   {isLoadingData ? (
                     <View style={styles.centerContainer}>
@@ -653,7 +873,11 @@ export default function HealthConnectTestScreen() {
                       {/* Exercise Sessions */}
                       {exerciseSessions.length > 0 ? (
                         <>
-                          <Text style={styles.subheading}>Recent Exercises:</Text>
+                          <Text style={styles.subheading}>
+                            {selectedTimeRange === 'specific' 
+                              ? 'Exercise Sessions on this Date:' 
+                              : 'Recent Exercise Sessions:'}
+                          </Text>
 
                           {exerciseSessions.slice(0, 3).map((session, index) => {
                             const startDate = new Date(session.startTime);
@@ -720,7 +944,7 @@ export default function HealthConnectTestScreen() {
                         </>
                       ) : (
                         <Text style={styles.noDataText}>
-                          No exercise sessions recorded in the last 7 days. Try recording workouts with a fitness app that integrates with Health Connect.
+                          No exercise sessions recorded for this time period. Try recording workouts with a fitness app that integrates with Health Connect.
                         </Text>
                       )}
 
@@ -1003,5 +1227,122 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     marginTop: 12,
     fontSize: 14,
+  },
+  // Time range selector styles
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+  },
+  selectedSegment: {
+    backgroundColor: '#2196F3',
+  },
+  segmentText: {
+    fontSize: 14,
+    color: '#2196F3',
+  },
+  selectedSegmentText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  dateSelector: {
+    marginTop: 8,
+  },
+  dateLabel: {
+    fontSize: 14,
+    marginBottom: 8,
+    color: '#666',
+  },
+  datePicker: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: 'white',
+  },
+  dateText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  specificDateButton: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedSpecificButton: {
+    backgroundColor: '#2196F3',
+  },
+  specificDateButtonText: {
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  selectedSpecificButtonText: {
+    color: 'white',
+  },
+  currentTimeRange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  timeIcon: {
+    marginRight: 8,
+  },
+  timeRangeText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  // Modal styles for iOS date picker
+  centeredView: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalView: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    width: '80%',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 20,
+  },
+  modalButton: {
+    flex: 0.48,
   },
 });

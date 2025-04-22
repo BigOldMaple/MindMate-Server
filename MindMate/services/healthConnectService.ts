@@ -634,5 +634,78 @@ export const formatExerciseDuration = (durationInMillis: number): string => {
   return `${hours}h ${minutes}m`;
 };
 
+// ========== Time Range Helper Functions ==========
+
+// Get time range for last day (24 hours)
+export const getTimeRangeForLastDay = (): { startTime: string, endTime: string } => {
+  const endTime = new Date().toISOString();
+  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  return { startTime, endTime };
+};
+
+// Get time range for last week (7 days)
+export const getTimeRangeForLastWeek = (): { startTime: string, endTime: string } => {
+  const endTime = new Date().toISOString();
+  const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  return { startTime, endTime };
+};
+
+// Get time range for last month (30 days)
+export const getTimeRangeForLastMonth = (): { startTime: string, endTime: string } => {
+  const endTime = new Date().toISOString();
+  const startTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  return { startTime, endTime };
+};
+
+// Get time range for last year (365 days)
+export const getTimeRangeForLastYear = (): { startTime: string, endTime: string } => {
+  const endTime = new Date().toISOString();
+  const startTime = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+  return { startTime, endTime };
+};
+
+// Get time range for a specific day
+export const getTimeRangeForSpecificDay = (date: Date): { startTime: string, endTime: string } => {
+  // Set time to beginning of the day (00:00:00)
+  const startDate = new Date(date);
+  startDate.setHours(0, 0, 0, 0);
+  const startTime = startDate.toISOString();
+  
+  // Set time to end of the day (23:59:59.999)
+  const endDate = new Date(date);
+  endDate.setHours(23, 59, 59, 999);
+  const endTime = endDate.toISOString();
+  
+  return { startTime, endTime };
+};
+
+// Helper to format date range for display
+export const formatDateRangeLabel = (timeRange: 'day' | 'week' | 'month' | 'year' | 'specific', specificDate?: Date): string => {
+  const now = new Date();
+  
+  switch (timeRange) {
+    case 'day':
+      return 'Last 24 Hours';
+    case 'week':
+      return 'Last 7 Days';
+    case 'month':
+      return 'Last 30 Days';
+    case 'year':
+      return 'Last 365 Days';
+    case 'specific':
+      if (specificDate) {
+        return specificDate.toLocaleDateString(undefined, {
+          weekday: 'short',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      }
+      return 'Specific Day';
+    default:
+      return 'Last 7 Days';
+  }
+};
+
 // Export SdkAvailabilityStatus for convenience
 export { SdkAvailabilityStatus } from 'react-native-health-connect';
