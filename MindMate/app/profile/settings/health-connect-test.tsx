@@ -8,6 +8,7 @@ import {
   checkHealthConnectAvailability,
   requestHealthConnectPermissions,
   requestSleepPermissions,
+  requestExercisePermissions,
   requestAllHealthPermissions,
   getHealthConnectPermissions,
   getAggregatedSteps,
@@ -18,6 +19,11 @@ import {
   formatSleepDuration,
   getSleepQualityDescription,
   formatDistance,
+  readExerciseSessions,
+  getTotalExerciseStats,
+  formatExerciseDuration,
+  getExerciseTypeName,
+  ExerciseType,
   SdkAvailabilityStatus,
 } from '@/services/healthConnectService';
 
@@ -26,12 +32,15 @@ export default function HealthConnectTestScreen() {
   const [isHealthConnectAvailable, setIsHealthConnectAvailable] = useState<boolean>(false);
   const [hasPermissions, setHasPermissions] = useState<boolean>(false);
   const [hasSleepPermissions, setHasSleepPermissions] = useState<boolean>(false);
+  const [hasExercisePermissions, setHasExercisePermissions] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [stepsData, setStepsData] = useState<any>(null);
   const [distanceData, setDistanceData] = useState<any>(null);
   const [sleepData, setSleepData] = useState<any>(null);
   const [lastNightSleep, setLastNightSleep] = useState<any>(null);
+  const [exerciseData, setExerciseData] = useState<any>(null);
+  const [exerciseSessions, setExerciseSessions] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,6 +80,7 @@ export default function HealthConnectTestScreen() {
 
         // Check if we have permissions
         const permissions = await getHealthConnectPermissions();
+
         const hasStepsPermission = permissions.some(
           (p) => p.recordType === 'Steps' && p.accessType === 'read'
         );
@@ -79,8 +89,13 @@ export default function HealthConnectTestScreen() {
           (p) => p.recordType === 'SleepSession' && p.accessType === 'read'
         );
 
+        const hasExercisePermission = permissions.some(
+          (p) => p.recordType === 'ExerciseSession' && p.accessType === 'read'
+        );
+
         setHasPermissions(hasStepsPermission);
         setHasSleepPermissions(hasSleepPermission);
+        setHasExercisePermissions(hasExercisePermission);
 
         if (hasStepsPermission) {
           await fetchHealthData();
@@ -88,6 +103,10 @@ export default function HealthConnectTestScreen() {
 
         if (hasSleepPermission) {
           await fetchSleepData();
+        }
+
+        if (hasExercisePermission) {
+          await fetchExerciseData();
         }
       } catch (err) {
         console.error('Error in Health Connect initialization:', err);
@@ -152,6 +171,44 @@ export default function HealthConnectTestScreen() {
     }
   };
 
+  const fetchExerciseData = async () => {
+    try {
+      setIsLoadingData(true);
+
+      // Fetch data for the last 7 days
+      const endTime = new Date().toISOString();
+      const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Get exercise stats
+      const exerciseStats = await getTotalExerciseStats(startTime, endTime);
+      setExerciseData(exerciseStats);
+
+      // Get individual exercise sessions
+      const sessions = await readExerciseSessions(startTime, endTime);
+
+      // Add this debug log
+      console.log('Exercise session details:', JSON.stringify(sessions.map(s => ({
+        type: s.exerciseType,
+        typeName: getExerciseTypeName(s.exerciseType),
+        start: s.startTime,
+        duration: new Date(s.endTime).getTime() - new Date(s.startTime).getTime()
+      })), null, 2));
+
+      // Sort by start time, most recent first
+      const sortedSessions = [...sessions].sort((a, b) =>
+        new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+      );
+      setExerciseSessions(sortedSessions);
+
+      console.log('Exercise sessions:', sessions.length);
+    } catch (err) {
+      console.error('Error fetching exercise data:', err);
+      setError('Failed to fetch exercise data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
   const handleRequestAllPermissions = async () => {
     try {
       setIsLoading(true);
@@ -165,8 +222,13 @@ export default function HealthConnectTestScreen() {
         (p) => p.recordType === 'SleepSession' && p.accessType === 'read'
       );
 
+      const hasExercisePermission = permissions.some(
+        (p) => p.recordType === 'ExerciseSession' && p.accessType === 'read'
+      );
+
       setHasPermissions(hasStepsPermission);
       setHasSleepPermissions(hasSleepPermission);
+      setHasExercisePermissions(hasExercisePermission);
 
       if (hasStepsPermission) {
         await fetchHealthData();
@@ -174,6 +236,10 @@ export default function HealthConnectTestScreen() {
 
       if (hasSleepPermission) {
         await fetchSleepData();
+      }
+
+      if (hasExercisePermission) {
+        await fetchExerciseData();
       }
     } catch (err) {
       console.error('Error requesting permissions:', err);
@@ -223,11 +289,31 @@ export default function HealthConnectTestScreen() {
     }
   };
 
+  const handleRequestExercisePermissions = async () => {
+    try {
+      setIsLoading(true);
+      const permissions = await requestExercisePermissions();
+      const hasExercisePermission = permissions.some(
+        (p) => p.recordType === 'ExerciseSession' && p.accessType === 'read'
+      );
+      setHasExercisePermissions(hasExercisePermission);
+
+      if (hasExercisePermission) {
+        await fetchExerciseData();
+      }
+    } catch (err) {
+      console.error('Error requesting exercise permissions:', err);
+      setError('Failed to request exercise permissions');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleOpenSettings = () => {
     openHealthSettings();
   };
 
-  // Helper functions for sleep data
+  // Helper functions for formatting data
   const formatSleepTime = (isoString: string | null | undefined): string => {
     if (!isoString) return 'N/A';
 
@@ -245,6 +331,17 @@ export default function HealthConnectTestScreen() {
     const end = new Date(endTime).getTime();
 
     return end - start;
+  };
+
+  const formatDate = (isoString: string | null | undefined): string => {
+    if (!isoString) return 'N/A';
+
+    const date = new Date(isoString);
+    return date.toLocaleDateString([], {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   return (
@@ -306,6 +403,16 @@ export default function HealthConnectTestScreen() {
                         {hasSleepPermissions ? 'Granted' : 'Not Granted'}
                       </Text>
                     </View>
+
+                    <View style={styles.statusRow}>
+                      <Text style={styles.statusLabel}>Exercise Permissions:</Text>
+                      <Text style={[
+                        styles.statusValue,
+                        { color: hasExercisePermissions ? '#00c853' : '#f44336' }
+                      ]}>
+                        {hasExercisePermissions ? 'Granted' : 'Not Granted'}
+                      </Text>
+                    </View>
                   </>
                 )}
 
@@ -326,7 +433,7 @@ export default function HealthConnectTestScreen() {
                     </Pressable>
                   )}
 
-                  {isHealthConnectAvailable && (!hasPermissions || !hasSleepPermissions) && (
+                  {isHealthConnectAvailable && (!hasPermissions || !hasSleepPermissions || !hasExercisePermissions) && (
                     <Pressable
                       style={styles.button}
                       onPress={handleRequestAllPermissions}
@@ -353,12 +460,22 @@ export default function HealthConnectTestScreen() {
                     </Pressable>
                   )}
 
-                  {isHealthConnectAvailable && (hasPermissions || hasSleepPermissions) && (
+                  {isHealthConnectAvailable && !hasExercisePermissions && (
+                    <Pressable
+                      style={styles.button}
+                      onPress={handleRequestExercisePermissions}
+                    >
+                      <Text style={styles.buttonText}>Exercise Permissions</Text>
+                    </Pressable>
+                  )}
+
+                  {isHealthConnectAvailable && (hasPermissions || hasSleepPermissions || hasExercisePermissions) && (
                     <Pressable
                       style={styles.button}
                       onPress={() => {
                         if (hasPermissions) fetchHealthData();
                         if (hasSleepPermissions) fetchSleepData();
+                        if (hasExercisePermissions) fetchExerciseData();
                       }}
                       disabled={isLoadingData}
                     >
@@ -440,7 +557,7 @@ export default function HealthConnectTestScreen() {
                         <Text style={styles.dataLabel}>Total Sleep:</Text>
                         <Text style={styles.dataValue}>
                           {sleepData?.SLEEP_DURATION_TOTAL
-                            ? formatSleepDuration(sleepData.SLEEP_DURATION_TOTAL * 1000) // Convert seconds to milliseconds
+                            ? formatSleepDuration(sleepData.SLEEP_DURATION_TOTAL * 1000)
                             : 'No data'}
                         </Text>
                       </View>
@@ -497,7 +614,7 @@ export default function HealthConnectTestScreen() {
                         </>
                       )}
 
-                      {!lastNightSleep && !sleepData?.DURATION && (
+                      {!lastNightSleep && !sleepData?.SLEEP_DURATION_TOTAL && (
                         <Text style={styles.noDataText}>
                           No sleep sessions recorded in the last 7 days. Try using a sleep tracking app that integrates with Health Connect.
                         </Text>
@@ -511,12 +628,116 @@ export default function HealthConnectTestScreen() {
                 </View>
               )}
 
+              {/* Exercise Data Section */}
+              {hasExercisePermissions && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Exercise Data (Last 7 Days)</Text>
+
+                  {isLoadingData ? (
+                    <View style={styles.centerContainer}>
+                      <ActivityIndicator size="small" color="#0066cc" />
+                      <Text style={styles.loadingText}>Loading exercise data...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {/* Total Exercise */}
+                      <View style={styles.dataContainer}>
+                        <Text style={styles.dataLabel}>Total Exercise:</Text>
+                        <Text style={styles.dataValue}>
+                          {exerciseData?.EXERCISE_DURATION_TOTAL?.inSeconds
+                            ? formatExerciseDuration(exerciseData.EXERCISE_DURATION_TOTAL.inSeconds * 1000)
+                            : '0m'}
+                        </Text>
+                      </View>
+
+                      {/* Exercise Sessions */}
+                      {exerciseSessions.length > 0 ? (
+                        <>
+                          <Text style={styles.subheading}>Recent Exercises:</Text>
+
+                          {exerciseSessions.slice(0, 3).map((session, index) => {
+                            const startDate = new Date(session.startTime);
+                            const endDate = new Date(session.endTime);
+                            const duration = endDate.getTime() - startDate.getTime();
+
+                            // Get a more descriptive exercise type
+                            let exerciseTypeName = getExerciseTypeName(session.exerciseType);
+                            // Fall back to a default type if needed
+                            if (exerciseTypeName === 'Unknown' && session.title) {
+                              exerciseTypeName = session.title;
+                            }
+
+                            return (
+                              <View key={index} style={styles.exerciseItem}>
+                                <View style={styles.exerciseHeader}>
+                                  <Text style={styles.exerciseType}>
+                                    {exerciseTypeName}
+                                  </Text>
+                                  <Text style={styles.exerciseDate}>
+                                    {formatDate(session.startTime)}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.exerciseDetails}>
+                                  <View style={styles.exerciseDetail}>
+                                    <FontAwesome name="clock-o" size={14} color="#666" />
+                                    <Text style={styles.exerciseDetailText}>
+                                      {formatExerciseDuration(duration)}
+                                    </Text>
+                                  </View>
+
+                                  {session.energy && (
+                                    <View style={styles.exerciseDetail}>
+                                      <FontAwesome name="fire" size={14} color="#f57c00" />
+                                      <Text style={styles.exerciseDetailText}>
+                                        {session.energy.inKilocalories || 0} kcal
+                                      </Text>
+                                    </View>
+                                  )}
+
+                                  {session.distance && (
+                                    <View style={styles.exerciseDetail}>
+                                      <FontAwesome name="map-marker" size={14} color="#4caf50" />
+                                      <Text style={styles.exerciseDetailText}>
+                                        {(session.distance.inKilometers || 0).toFixed(2)} km
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+
+                                {session.title && exerciseTypeName !== session.title && (
+                                  <Text style={styles.exerciseTitle}>{session.title}</Text>
+                                )}
+                              </View>
+                            );
+                          })}
+
+                          {exerciseSessions.length > 3 && (
+                            <Text style={styles.moreExercises}>
+                              +{exerciseSessions.length - 3} more exercises
+                            </Text>
+                          )}
+                        </>
+                      ) : (
+                        <Text style={styles.noDataText}>
+                          No exercise sessions recorded in the last 7 days. Try recording workouts with a fitness app that integrates with Health Connect.
+                        </Text>
+                      )}
+
+                      <Text style={styles.dataSourceText}>
+                        Data Sources: {exerciseData?.dataOrigins?.join(', ') || 'None'}
+                      </Text>
+                    </>
+                  )}
+                </View>
+              )}
+
               {/* Information Section */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>About Health Connect</Text>
                 <Text style={styles.infoText}>
                   Health Connect allows apps to share health and fitness data with each other.
-                  This enables MindMate to retrieve activity and sleep data from Health Connect, even when collected by other apps.
+                  This enables MindMate to retrieve activity, sleep, and exercise data from Health Connect, even when collected by other apps.
                 </Text>
                 <Text style={styles.infoText}>
                   For this to work, you need:
@@ -527,7 +748,7 @@ export default function HealthConnectTestScreen() {
                   <Text style={styles.bulletPoint}>• At least one health app that shares data with Health Connect</Text>
                 </View>
                 <Text style={styles.infoText}>
-                  Tracking both physical activity and sleep patterns can provide valuable insights into your mental wellbeing.
+                  Tracking physical activity, sleep patterns, and exercise habits provides valuable insights into your mental wellbeing.
                 </Text>
               </View>
             </>
@@ -703,7 +924,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     lineHeight: 20,
   },
-  // New styles for sleep section
+  // Sleep styles
   subheading: {
     fontSize: 16,
     fontWeight: '600',
@@ -735,5 +956,52 @@ const styles = StyleSheet.create({
   sleepQualityText: {
     fontSize: 14,
     color: '#333',
+  },
+  // Exercise styles
+  exerciseItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    paddingVertical: 12,
+  },
+  exerciseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  exerciseType: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  exerciseDate: {
+    fontSize: 14,
+    color: '#666',
+  },
+  exerciseDetails: {
+    flexDirection: 'row',
+    marginVertical: 4,
+  },
+  exerciseDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  exerciseDetailText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
+  },
+  exerciseTitle: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  moreExercises: {
+    textAlign: 'center',
+    color: '#2196F3',
+    marginTop: 12,
+    fontSize: 14,
   },
 });
