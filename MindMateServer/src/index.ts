@@ -12,8 +12,26 @@ import buddyPeerRoutes from './routes/buddyPeer';
 import chatRoutes from './routes/chat';
 import checkInRoutes from './routes/checkIn';
 import notificationsRoutes from './routes/notifications';
-import configRoutes from './routes/config'; // Add new config routes
-import { ngrokService } from './services/ngrokService'; // Import the ngrok service
+import configRoutes from './routes/config';
+import healthDataRoutes from './routes/healthData'; // Import the health data routes
+import { ngrokService } from './services/ngrokService';
+
+// Define a variable for the health sync task manager
+// We'll assign it after imports to avoid circular dependencies
+let healthSyncTaskManager: any = null;
+
+// Try to import the health sync task manager
+try {
+    // Import using dynamic import to avoid issues if the file doesn't exist yet
+    import('./services/healthSyncTaskManager').then(module => {
+        healthSyncTaskManager = module.healthSyncTaskManager;
+        console.log('Health sync task manager imported successfully');
+    }).catch(err => {
+        console.error('Error importing health sync task manager:', err.message);
+    });
+} catch (err) {
+    console.error('Failed to import health sync task manager:', err);
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -69,7 +87,8 @@ app.use('/api/buddy-peer', buddyPeerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/check-in', checkInRoutes);
 app.use('/api/notifications', notificationsRoutes);
-app.use('/api/config', configRoutes); // Add new config routes
+app.use('/api/config', configRoutes);
+app.use('/api/health-data', healthDataRoutes); // Mount health data routes
 
 // Enhanced health check route with WebSocket info
 app.get('/health', (_req, res) => {
@@ -146,6 +165,23 @@ const startServer = async () => {
                 console.log(`const NGROK_URL: string | null = '${ngrokInfo.url}';`);
                 console.log('------------------------------------------\n');
             }
+            
+            // Start health data sync task manager if available
+            if (healthSyncTaskManager) {
+                try {
+                    healthSyncTaskManager.startSyncTask(15); // Sync every 15 minutes
+                    console.log('\nHealth Data Sync:');
+                    console.log('---------------------------');
+                    console.log('Health data sync task started');
+                    console.log('Sync interval: 15 minutes');
+                    console.log('---------------------------\n');
+                } catch (error) {
+                    console.error('Failed to start health sync task:', error);
+                }
+            } else {
+                console.log('\nHealth data sync task manager not available');
+                console.log('Make sure you have created the healthSyncTaskManager.ts file\n');
+            }
         });
 
     } catch (error) {
@@ -157,6 +193,16 @@ const startServer = async () => {
 // Graceful shutdown handling
 const shutdown = async () => {
     console.log('\nShutting down gracefully...');
+    
+    // Stop health sync task manager if available
+    if (healthSyncTaskManager && typeof healthSyncTaskManager.stopSyncTask === 'function') {
+        try {
+            healthSyncTaskManager.stopSyncTask();
+            console.log('Health sync task stopped');
+        } catch (error) {
+            console.error('Error stopping health sync task:', error);
+        }
+    }
     
     // Close ngrok using the service
     try {

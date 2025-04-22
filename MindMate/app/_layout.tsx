@@ -24,6 +24,8 @@ import {
   SdkAvailabilityStatus 
 } from '@/services/healthConnectService';
 import { registerBackgroundHealthFetch } from '@/services/backgroundHealthService';
+// Import health data sync service
+import { registerHealthDataSync, handleHealthSyncNotification } from '@/services/healthDataSyncService';
 
 // Prevent specific warnings from showing in development
 LogBox.ignoreLogs([
@@ -32,11 +34,35 @@ LogBox.ignoreLogs([
 
 // Configure notifications for Android
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    // Check if this is a health sync notification
+    const data = notification.request.content.data;
+    
+    if (data && data.type === 'health_sync') {
+      console.log('Received health sync notification, handling in background');
+      
+      // Process health sync notification in background
+      setTimeout(() => {
+        handleHealthSyncNotification().catch(error => {
+          console.error('Error handling health sync notification:', error);
+        });
+      }, 0);
+      
+      // Return false for UI alerts since this is a silent notification
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      };
+    }
+    
+    // Default behavior for normal notifications
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    };
+  },
 });
 
 export { ErrorBoundary } from 'expo-router';
@@ -385,6 +411,18 @@ export default function RootLayout() {
                     console.log('Background health fetch registered successfully');
                   } else {
                     console.log('Failed to register background health fetch');
+                  }
+                  
+                  // Register health data sync for database updates
+                  try {
+                    const healthSyncRegistered = await registerHealthDataSync();
+                    if (healthSyncRegistered) {
+                      console.log('Health data sync registered successfully');
+                    } else {
+                      console.log('Failed to register health data sync');
+                    }
+                  } catch (syncError) {
+                    console.error('Error registering health data sync:', syncError);
                   }
                 } else {
                   console.log('Failed to initialize Health Connect');
