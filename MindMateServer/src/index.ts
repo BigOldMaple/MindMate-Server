@@ -138,15 +138,15 @@ const startServer = async () => {
             console.log(`Port: ${port}`);
             console.log('Server is accessible at:');
             console.log(`  - Local: http://localhost:${port}`);
-            console.log(`  - Network: http://139.222.245.184:${port}`);
-            console.log(`  - WebSocket: ws://139.222.245.184:${port}/ws`);
+            console.log(`  - Network: http://139.222.247.9:${port}`);
+            console.log(`  - WebSocket: ws://139.222.247.9:${port}/ws`);
             console.log('\nMongoDB Status:');
             console.log(`  - Connection State: ${mongoose.connection.readyState}`);
             console.log(`  - Database: ${mongoose.connection.name}`);
             console.log(`\nWebSocket Status:`);
             console.log(`  - Connected Clients: ${wss.getClients().size}`);
             console.log('\nTest your connection:');
-            console.log(`  - Health Check: http://139.222.245.184:${port}/health`);
+            console.log(`  - Health Check: http://139.222.247.9:${port}/health`);
             console.log('---------------------------\n');
             
             // Start ngrok tunnel using the service
