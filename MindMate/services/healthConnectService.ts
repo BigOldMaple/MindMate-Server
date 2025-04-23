@@ -10,6 +10,29 @@ import {
   aggregateRecord,
   openHealthConnectSettings,
 } from 'react-native-health-connect';
+import * as SecureStore from 'expo-secure-store';
+import { auth } from './auth';
+import { getApiConfig } from './apiConfig';
+
+type ExerciseSessionRecord = {
+  exerciseType: number;
+  startTime: string;
+  endTime: string;
+  title?: string;
+  notes?: string;
+  metadata?: {
+    dataOrigin?: string;
+  };
+  // These properties may not exist on all exercise records
+  energy?: {
+    inCalories?: number;
+    inKilocalories?: number;
+  };
+  distance?: {
+    inMeters?: number;
+    inKilometers?: number;
+  };
+};
 
 // ========== Sleep Related Types ==========
 export enum SleepStageType {
@@ -68,6 +91,308 @@ export const checkHealthConnectAvailability = async (): Promise<number> => {
   } catch (error) {
     console.error('Error checking Health Connect availability:', error);
     return SdkAvailabilityStatus.SDK_UNAVAILABLE;
+  }
+};
+
+/**
+ * Syncs all available historical health data from Health Connect
+ * 
+ * @returns {Promise<{success: boolean, message: string, days?: number}>}
+ */
+export const syncHistoricalHealthData = async (): Promise<{success: boolean, message: string, days?: number}> => {
+  try {
+    console.log('[HealthConnect] Starting historical health data sync');
+    
+    // Initialize Health Connect
+    const initialized = await initializeHealthConnect();
+    if (!initialized) {
+      return { success: false, message: 'Failed to initialize Health Connect' };
+    }
+    
+    // Check permissions
+    const permissions = await getHealthConnectPermissions();
+    const hasSteps = permissions.some(p => p.recordType === 'Steps' && p.accessType === 'read');
+    const hasSleep = permissions.some(p => p.recordType === 'SleepSession' && p.accessType === 'read');
+    const hasExercise = permissions.some(p => p.recordType === 'ExerciseSession' && p.accessType === 'read');
+    
+    if (!hasSteps && !hasSleep && !hasExercise) {
+      console.log('[HealthConnect] No health permissions granted');
+      return { 
+        success: false, 
+        message: 'No health permissions granted. Please grant permissions in app settings.' 
+      };
+    }
+    
+    // Set time range for retrieving all historical data
+    // Go back 365 days by default
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const startTime = oneYearAgo.toISOString();
+    const endTime = new Date().toISOString();
+    
+    console.log(`[HealthConnect] Fetching historical data from ${startTime} to ${endTime}`);
+    
+    // Object to store daily health data
+    // Format: { 'YYYY-MM-DD': { steps: {...}, sleep: {...}, ... } }
+    const dailyHealthData: Record<string, any> = {};
+    
+    // Track days with data for stats
+    let daysWithData = 0;
+    
+    // Fetch and process steps data
+    if (hasSteps) {
+      try {
+        console.log('[HealthConnect] Fetching steps data...');
+        
+        // Get raw step records
+        const stepsRecords = await readStepsData(startTime, endTime);
+        console.log(`[HealthConnect] Found ${stepsRecords.length} step records`);
+        
+        // Process each record and organize by day
+        for (const record of stepsRecords) {
+          // Use date (YYYY-MM-DD) as key
+          const date = new Date(record.startTime);
+          const dateStr = date.toISOString().split('T')[0];
+          
+          // Get steps for this specific day
+          const dayStart = new Date(dateStr + 'T00:00:00.000Z');
+          const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
+          
+          const stepsData = await getAggregatedSteps(
+            dayStart.toISOString(), 
+            dayEnd.toISOString()
+          );
+          
+          if (stepsData && stepsData.COUNT_TOTAL) {
+            if (!dailyHealthData[dateStr]) {
+              dailyHealthData[dateStr] = {};
+              daysWithData++;
+            }
+            
+            dailyHealthData[dateStr].steps = {
+              count: stepsData.COUNT_TOTAL,
+              startTime: dayStart.toISOString(),
+              endTime: dayEnd.toISOString(),
+              dataOrigins: stepsData.dataOrigins || []
+            };
+          }
+        }
+      } catch (error) {
+        console.error('[HealthConnect] Error fetching steps data:', error);
+      }
+      
+      // Also get distance data
+      try {
+        console.log('[HealthConnect] Fetching distance data...');
+        
+        const distanceRecords = await readDistanceData(startTime, endTime);
+        console.log(`[HealthConnect] Found ${distanceRecords.length} distance records`);
+        
+        for (const record of distanceRecords) {
+          const date = new Date(record.startTime);
+          const dateStr = date.toISOString().split('T')[0];
+          
+          const dayStart = new Date(dateStr + 'T00:00:00.000Z');
+          const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
+          
+          const distanceData = await getAggregatedDistance(
+            dayStart.toISOString(), 
+            dayEnd.toISOString()
+          );
+          
+          if (distanceData && distanceData.DISTANCE?.inMeters) {
+            if (!dailyHealthData[dateStr]) {
+              dailyHealthData[dateStr] = {};
+              daysWithData++;
+            }
+            
+            dailyHealthData[dateStr].distance = {
+              inMeters: distanceData.DISTANCE.inMeters,
+              inKilometers: distanceData.DISTANCE.inKilometers,
+              startTime: dayStart.toISOString(),
+              endTime: dayEnd.toISOString(),
+              dataOrigins: distanceData.dataOrigins || []
+            };
+          }
+        }
+      } catch (error) {
+        console.error('[HealthConnect] Error fetching distance data:', error);
+      }
+    }
+    
+    // Fetch and process sleep data
+    if (hasSleep) {
+      try {
+        console.log('[HealthConnect] Fetching sleep data...');
+        
+        const sleepSessions = await readSleepSessions(startTime, endTime);
+        console.log(`[HealthConnect] Found ${sleepSessions.length} sleep sessions`);
+        
+        for (const session of sleepSessions) {
+          // Use the end date as the day the sleep belongs to
+          const endDate = new Date(session.endTime);
+          const dateStr = endDate.toISOString().split('T')[0];
+          
+          // Calculate duration
+          const startTime = new Date(session.startTime).getTime();
+          const endTime = endDate.getTime();
+          const durationInSeconds = Math.round((endTime - startTime) / 1000);
+          
+          // Determine sleep quality
+          const durationHours = durationInSeconds / 3600;
+          let quality = 'fair';
+          
+          if (durationHours < 6) {
+            quality = 'poor';
+          } else if (durationHours >= 7 && durationHours <= 9) {
+            quality = 'good';
+          }
+          
+          if (!dailyHealthData[dateStr]) {
+            dailyHealthData[dateStr] = {};
+            daysWithData++;
+          }
+          
+          dailyHealthData[dateStr].sleep = {
+            startTime: session.startTime,
+            endTime: session.endTime,
+            durationInSeconds,
+            quality,
+            dataOrigins: [session.metadata?.dataOrigin || 'unknown']
+          };
+        }
+      } catch (error) {
+        console.error('[HealthConnect] Error fetching sleep data:', error);
+      }
+    }
+    
+    // Fetch and process exercise data
+    if (hasExercise) {
+      try {
+        console.log('[HealthConnect] Fetching exercise data...');
+        
+        const exerciseSessions = await readExerciseSessions(startTime, endTime);
+        console.log(`[HealthConnect] Found ${exerciseSessions.length} exercise sessions`);
+        
+        for (const session of exerciseSessions as unknown as ExerciseSessionRecord[]) {
+          // Use start date of the exercise
+          const startDate = new Date(session.startTime);
+          const dateStr = startDate.toISOString().split('T')[0];
+          
+          // Calculate duration
+          const endTime = new Date(session.endTime).getTime();
+          const durationInSeconds = Math.round((endTime - startDate.getTime()) / 1000);
+          
+          const exerciseData: any = {
+            type: session.exerciseType.toString(),
+            startTime: session.startTime,
+            endTime: session.endTime,
+            durationInSeconds,
+            dataOrigins: [session.metadata?.dataOrigin || 'unknown']
+          };
+          
+          // Add calories if available
+          if (session.energy && 
+              (session.energy.inKilocalories || 
+               session.energy.inCalories)) {
+            exerciseData.calories = session.energy.inKilocalories || 
+                                   (session.energy.inCalories ? session.energy.inCalories / 1000 : undefined);
+          }
+          
+          // Add distance if available
+          if (session.distance) {
+            exerciseData.distance = {
+              inMeters: session.distance.inMeters,
+              inKilometers: session.distance.inKilometers
+            };
+          }
+          
+          if (!dailyHealthData[dateStr]) {
+            dailyHealthData[dateStr] = {};
+            daysWithData++;
+          }
+          
+          // If we already have exercise data for this day, store as an array
+          if (dailyHealthData[dateStr].exercise) {
+            if (!dailyHealthData[dateStr].exercises) {
+              dailyHealthData[dateStr].exercises = [dailyHealthData[dateStr].exercise];
+            }
+            
+            dailyHealthData[dateStr].exercises.push(exerciseData);
+            
+            // Update total exercise duration
+            dailyHealthData[dateStr].exercise.durationInSeconds += durationInSeconds;
+            
+            // Update calories if available
+            if (exerciseData.calories && dailyHealthData[dateStr].exercise.calories) {
+              dailyHealthData[dateStr].exercise.calories += exerciseData.calories;
+            }
+          } else {
+            dailyHealthData[dateStr].exercise = exerciseData;
+          }
+        }
+      } catch (error) {
+        console.error('[HealthConnect] Error fetching exercise data:', error);
+      }
+    }
+    
+    // Check if we found any data
+    if (daysWithData === 0) {
+      console.log('[HealthConnect] No health data found');
+      return { 
+        success: false, 
+        message: 'No health data found in Health Connect. Try using fitness apps that integrate with Health Connect first.' 
+      };
+    }
+    
+    console.log(`[HealthConnect] Found health data for ${daysWithData} days`);
+    
+    // Send data to server
+    const apiConfig = getApiConfig();
+    const token = await auth.getToken();
+    
+    if (!token) {
+      return { 
+        success: false, 
+        message: 'Not authenticated. Please log in first.' 
+      };
+    }
+    
+    // Send data to server using the new sync-multiple endpoint
+    console.log(`[HealthConnect] Sending data for ${daysWithData} days to server`);
+    const response = await fetch(`${apiConfig.baseUrl}/health-data/sync-multiple`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ days: dailyHealthData }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Server error: ${errorData.error || response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    // Update last sync time
+    await SecureStore.setItemAsync('LAST_HEALTH_SYNC_TIME', new Date().toISOString());
+    
+    console.log('[HealthConnect] Historical health data sync completed successfully');
+    
+    // Return success with stats
+    return { 
+      success: true, 
+      message: result.message || `Successfully synced health data for ${daysWithData} days`, 
+      days: daysWithData 
+    };
+  } catch (error) {
+    console.error('[HealthConnect] Historical health data sync error:', error);
+    return { 
+      success: false, 
+      message: `Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
+    };
   }
 };
 
@@ -704,6 +1029,28 @@ export const formatDateRangeLabel = (timeRange: 'day' | 'week' | 'month' | 'year
       return 'Specific Day';
     default:
       return 'Last 7 Days';
+  }
+};
+
+// Save the last time health data was synced
+export const updateLastHealthSyncTime = async (): Promise<boolean> => {
+  try {
+    await SecureStore.setItemAsync('LAST_HEALTH_SYNC_TIME', new Date().toISOString());
+    return true;
+  } catch (error) {
+    console.error('Error updating last health sync time:', error);
+    return false;
+  }
+};
+
+// Get the last time health data was synced
+export const getLastHealthSyncTime = async (): Promise<Date | null> => {
+  try {
+    const time = await SecureStore.getItemAsync('LAST_HEALTH_SYNC_TIME');
+    return time ? new Date(time) : null;
+  } catch (error) {
+    console.error('Error getting last health sync time:', error);
+    return null;
   }
 };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, router } from 'expo-router';
@@ -9,6 +9,7 @@ import { checkInApi } from '@/services/checkInApi';
 import { notificationService } from '@/services/notificationService';
 import { notificationsApi } from '@/services/notificationsApi';
 import * as SecureStore from 'expo-secure-store';
+import SyncHealthDataButton from '@/components/SyncHealthDataButton';
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);
@@ -262,6 +263,9 @@ export default function HomeScreen() {
         </Text>
       </Pressable>
 
+      {/* Health Data Sync Button */}
+      <SyncHealthDataButton />
+
       {/* Support Network Card */}
       <View style={styles.networkCard}>
         <View style={styles.cardHeader}>
@@ -314,6 +318,9 @@ const styles = StyleSheet.create({
   },
   wellnessHeader: {
     marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   wellnessContent: {
     flexDirection: 'row',
@@ -473,5 +480,5 @@ const styles = StyleSheet.create({
   },
   checkInTextDisabled: {
     color: '#999',
-  },
+  }
 });

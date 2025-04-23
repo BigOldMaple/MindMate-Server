@@ -5,6 +5,7 @@ import { healthDataSyncService } from '../services/healthDataSyncService';
 import { HealthData } from '../Database/HealthDataSchema';
 import { Types } from 'mongoose';
 import { ApiError } from '../middleware/error';
+import { DeviceToken } from '../Database/DeviceTokenSchema';
 
 const router = express.Router();
 
@@ -47,6 +48,115 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
     }
   } catch (error) {
     console.error('Health data sync error:', error);
+    res.status(500).json({ error: 'Failed to sync health data' });
+  }
+});
+
+// Sync multiple days of health data
+router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
+  try {
+    const { days } = req.body;
+    
+    if (!days || typeof days !== 'object') {
+      return res.status(400).json({ error: 'Health data is required in the format {days: {...}}' });
+    }
+    
+    console.log(`Received health data for ${Object.keys(days).length} days`);
+    
+    // Track stats
+    const stats = {
+      totalDays: Object.keys(days).length,
+      processed: 0,
+      created: {
+        steps: 0,
+        distance: 0,
+        sleep: 0,
+        exercise: 0
+      },
+      updated: {
+        steps: 0,
+        distance: 0,
+        sleep: 0,
+        exercise: 0
+      },
+      errors: 0
+    };
+    
+    // Process each day's data
+    for (const dateStr of Object.keys(days)) {
+      const dayData = days[dateStr];
+      
+      try {
+        stats.processed++;
+        
+        // Convert date string to Date object (assumes YYYY-MM-DD format)
+        const recordDate = new Date(`${dateStr}T00:00:00.000Z`);
+        
+        // Process steps data if available
+        if (dayData.steps) {
+          const result = await processStepsData(req.userId, recordDate, dayData.steps);
+          if (result.created) {
+            stats.created.steps++;
+          } else if (result.updated) {
+            stats.updated.steps++;
+          }
+        }
+        
+        // Process distance data if available
+        if (dayData.distance) {
+          const result = await processDistanceData(req.userId, recordDate, dayData.distance);
+          if (result.created) {
+            stats.created.distance++;
+          } else if (result.updated) {
+            stats.updated.distance++;
+          }
+        }
+        
+        // Process sleep data if available
+        if (dayData.sleep) {
+          const result = await processSleepData(req.userId, recordDate, dayData.sleep);
+          if (result.created) {
+            stats.created.sleep++;
+          } else if (result.updated) {
+            stats.updated.sleep++;
+          }
+        }
+        
+        // Process exercise data if available
+        if (dayData.exercise) {
+          const result = await processExerciseData(req.userId, recordDate, dayData.exercise);
+          if (result.created) {
+            stats.created.exercise++;
+          } else if (result.updated) {
+            stats.updated.exercise++;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing data for day ${dateStr}:`, error);
+        stats.errors++;
+      }
+    }
+    
+    // Update last sync time for the user's devices
+    await DeviceToken.updateMany(
+      { userId: new Types.ObjectId(req.userId) },
+      { $set: { 'metadata.lastHealthSync': new Date() } }
+    );
+    
+    // Create a message summarizing what was done
+    const createdTotal = stats.created.steps + stats.created.distance + stats.created.sleep + stats.created.exercise;
+    const updatedTotal = stats.updated.steps + stats.updated.distance + stats.updated.sleep + stats.updated.exercise;
+    
+    const message = `Successfully processed ${stats.processed} days of health data. ` +
+      `Created ${createdTotal} new records and updated ${updatedTotal} existing records.`;
+    
+    res.status(200).json({ 
+      success: true, 
+      message, 
+      stats 
+    });
+  } catch (error) {
+    console.error('Multiple health data sync error:', error);
     res.status(500).json({ error: 'Failed to sync health data' });
   }
 });
@@ -167,5 +277,197 @@ router.delete('/:id', authenticateToken, async (req: any, res) => {
     }
   }
 });
+
+// Helper functions to process each type of health data
+
+async function processStepsData(userId: string, date: Date, stepsData: any) {
+  // Generate a unique original ID for deduplication
+  const originalId = `steps_${userId}_${date.toISOString().split('T')[0]}`;
+  
+  // Check if record already exists
+  const existingRecord = await HealthData.findOne({ 
+    userId: new Types.ObjectId(userId),
+    dataType: 'steps',
+    date: { 
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+      $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+    }
+  });
+  
+  if (existingRecord) {
+    // Update existing record if count changed
+    if (existingRecord.stepsData?.count !== stepsData.count) {
+      existingRecord.stepsData.count = stepsData.count;
+      existingRecord.lastSyncedAt = new Date();
+      await existingRecord.save();
+      return { updated: true };
+    }
+    return { updated: false };
+  } else {
+    // Create new record
+    await HealthData.create({
+      userId: new Types.ObjectId(userId),
+      dataType: 'steps',
+      date,
+      stepsData: {
+        count: stepsData.count,
+        startTime: new Date(stepsData.startTime),
+        endTime: new Date(stepsData.endTime),
+        dataSource: stepsData.dataOrigins?.join(', ') || 'unknown'
+      },
+      lastSyncedAt: new Date(),
+      originalId
+    });
+    return { created: true };
+  }
+}
+
+async function processDistanceData(userId: string, date: Date, distanceData: any) {
+  // Generate a unique original ID for deduplication
+  const originalId = `distance_${userId}_${date.toISOString().split('T')[0]}`;
+  
+  // Check if record already exists
+  const existingRecord = await HealthData.findOne({ 
+    userId: new Types.ObjectId(userId),
+    dataType: 'distance',
+    date: { 
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+      $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+    }
+  });
+  
+  if (existingRecord) {
+    // Update existing record if distance changed
+    if (existingRecord.distanceData?.distance.inMeters !== distanceData.inMeters) {
+      existingRecord.distanceData.distance.inMeters = distanceData.inMeters;
+      existingRecord.distanceData.distance.inKilometers = distanceData.inKilometers;
+      existingRecord.lastSyncedAt = new Date();
+      await existingRecord.save();
+      return { updated: true };
+    }
+    return { updated: false };
+  } else {
+    // Create new record
+    await HealthData.create({
+      userId: new Types.ObjectId(userId),
+      dataType: 'distance',
+      date,
+      distanceData: {
+        distance: {
+          inMeters: distanceData.inMeters,
+          inKilometers: distanceData.inKilometers
+        },
+        startTime: new Date(distanceData.startTime),
+        endTime: new Date(distanceData.endTime),
+        dataSource: distanceData.dataOrigins?.join(', ') || 'unknown'
+      },
+      lastSyncedAt: new Date(),
+      originalId
+    });
+    return { created: true };
+  }
+}
+
+async function processSleepData(userId: string, date: Date, sleepData: any) {
+  // Generate a unique original ID for deduplication
+  const originalId = `sleep_${userId}_${date.toISOString().split('T')[0]}`;
+  
+  // Check if record already exists
+  const existingRecord = await HealthData.findOne({ 
+    userId: new Types.ObjectId(userId),
+    dataType: 'sleep',
+    date: { 
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+      $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+    }
+  });
+  
+  if (existingRecord) {
+    // Update existing record if duration changed
+    if (existingRecord.sleepData?.durationInSeconds !== sleepData.durationInSeconds) {
+      existingRecord.sleepData.durationInSeconds = sleepData.durationInSeconds;
+      existingRecord.sleepData.quality = sleepData.quality;
+      existingRecord.sleepData.startTime = new Date(sleepData.startTime);
+      existingRecord.sleepData.endTime = new Date(sleepData.endTime);
+      existingRecord.lastSyncedAt = new Date();
+      await existingRecord.save();
+      return { updated: true };
+    }
+    return { updated: false };
+  } else {
+    // Create new record
+    await HealthData.create({
+      userId: new Types.ObjectId(userId),
+      dataType: 'sleep',
+      date,
+      sleepData: {
+        startTime: new Date(sleepData.startTime),
+        endTime: new Date(sleepData.endTime),
+        durationInSeconds: sleepData.durationInSeconds,
+        quality: sleepData.quality,
+        dataSource: sleepData.dataOrigins?.join(', ') || 'unknown'
+      },
+      lastSyncedAt: new Date(),
+      originalId
+    });
+    return { created: true };
+  }
+}
+
+async function processExerciseData(userId: string, date: Date, exerciseData: any) {
+  // Generate a unique original ID for deduplication
+  const originalId = `exercise_${userId}_${exerciseData.type}_${date.toISOString().split('T')[0]}`;
+  
+  // Check if record already exists
+  const existingRecord = await HealthData.findOne({ 
+    userId: new Types.ObjectId(userId),
+    dataType: 'exercise',
+    date: { 
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+      $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+    },
+    'exerciseData.type': exerciseData.type
+  });
+  
+  if (existingRecord) {
+    // Update existing record if duration changed
+    if (existingRecord.exerciseData?.durationInSeconds !== exerciseData.durationInSeconds) {
+      existingRecord.exerciseData.durationInSeconds = exerciseData.durationInSeconds;
+      existingRecord.exerciseData.calories = exerciseData.calories;
+      if (exerciseData.distance) {
+        existingRecord.exerciseData.distance = {
+          inMeters: exerciseData.distance.inMeters,
+          inKilometers: exerciseData.distance.inKilometers
+        };
+      }
+      existingRecord.lastSyncedAt = new Date();
+      await existingRecord.save();
+      return { updated: true };
+    }
+    return { updated: false };
+  } else {
+    // Create new record
+    await HealthData.create({
+      userId: new Types.ObjectId(userId),
+      dataType: 'exercise',
+      date,
+      exerciseData: {
+        type: exerciseData.type,
+        startTime: new Date(exerciseData.startTime),
+        endTime: new Date(exerciseData.endTime),
+        durationInSeconds: exerciseData.durationInSeconds,
+        calories: exerciseData.calories,
+        distance: exerciseData.distance ? {
+          inMeters: exerciseData.distance.inMeters,
+          inKilometers: exerciseData.distance.inKilometers
+        } : undefined,
+        dataSource: exerciseData.dataOrigins?.join(', ') || 'unknown'
+      },
+      lastSyncedAt: new Date(),
+      originalId
+    });
+    return { created: true };
+  }
+}
 
 export default router;
