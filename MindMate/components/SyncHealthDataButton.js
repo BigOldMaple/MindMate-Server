@@ -53,7 +53,7 @@ const SyncHealthDataButton = () => {
       {isSyncing ? (
         <ActivityIndicator size="small" color="#fff" style={styles.icon} />
       ) : (
-        <FontAwesome name="sync" size={18} color="#fff" style={styles.icon} />
+        <FontAwesome name="refresh" size={18} color="#fff" style={styles.icon} />
       )}
       <Text style={styles.buttonText}>
         {isSyncing ? 'Syncing Historical Health Data...' : 'Sync Health Data'}

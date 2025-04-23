@@ -13,16 +13,14 @@ import chatRoutes from './routes/chat';
 import checkInRoutes from './routes/checkIn';
 import notificationsRoutes from './routes/notifications';
 import configRoutes from './routes/config';
-import healthDataRoutes from './routes/healthData'; // Import the health data routes
+import healthDataRoutes from './routes/healthData';
 import { ngrokService } from './services/ngrokService';
 
 // Define a variable for the health sync task manager
-// We'll assign it after imports to avoid circular dependencies
 let healthSyncTaskManager: any = null;
 
-// Try to import the health sync task manager
+// Import the health sync task manager (used for updating device sync timestamps)
 try {
-    // Import using dynamic import to avoid issues if the file doesn't exist yet
     import('./services/healthSyncTaskManager').then(module => {
         healthSyncTaskManager = module.healthSyncTaskManager;
         console.log('Health sync task manager imported successfully');
@@ -40,7 +38,7 @@ const port = parseInt(process.env.PORT || '3000', 10);
 // Initialize WebSocket server
 const wss = new WebSocketServer(server);
 
-// Very permissive CORS settings for development
+// CORS settings
 const corsOptions = {
     origin: true, // Allow all origins
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -54,7 +52,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Enhanced debug middleware
+// Debug middleware
 app.use((req, res, next) => {
     const timestamp = new Date().toISOString();
     console.log(`\n[${timestamp}] New Request:`);
@@ -88,9 +86,9 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/check-in', checkInRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/config', configRoutes);
-app.use('/api/health-data', healthDataRoutes); // Mount health data routes
+app.use('/api/health-data', healthDataRoutes);
 
-// Enhanced health check route with WebSocket info
+// Health check route
 app.get('/health', (_req, res) => {
     const mongoStatus = mongoose.connection.readyState;
     const statusText = ['disconnected', 'connected', 'connecting', 'disconnecting'];
@@ -149,7 +147,7 @@ const startServer = async () => {
             console.log(`  - Health Check: http://139.222.247.9:${port}/health`);
             console.log('---------------------------\n');
             
-            // Start ngrok tunnel using the service
+            // Start ngrok tunnel
             const ngrokInfo = await ngrokService.startTunnel(port);
             if (ngrokInfo) {
                 console.log('\nNgrok Tunnel Information:');
@@ -166,21 +164,20 @@ const startServer = async () => {
                 console.log('------------------------------------------\n');
             }
             
-            // Start health data sync task manager if available
+            // Initialize health sync task manager
             if (healthSyncTaskManager) {
                 try {
-                    healthSyncTaskManager.startSyncTask(15); // Sync every 15 minutes
+                    healthSyncTaskManager.startSyncTask();
                     console.log('\nHealth Data Sync:');
                     console.log('---------------------------');
-                    console.log('Health data sync task started');
-                    console.log('Sync interval: 15 minutes');
+                    console.log('Automatic health data sync is disabled');
+                    console.log('Manual syncing via app UI is available');
                     console.log('---------------------------\n');
                 } catch (error) {
-                    console.error('Failed to start health sync task:', error);
+                    console.error('Failed to initialize health sync task manager:', error);
                 }
             } else {
                 console.log('\nHealth data sync task manager not available');
-                console.log('Make sure you have created the healthSyncTaskManager.ts file\n');
             }
         });
 
@@ -198,9 +195,9 @@ const shutdown = async () => {
     if (healthSyncTaskManager && typeof healthSyncTaskManager.stopSyncTask === 'function') {
         try {
             healthSyncTaskManager.stopSyncTask();
-            console.log('Health sync task stopped');
+            console.log('Health sync manager cleaned up');
         } catch (error) {
-            console.error('Error stopping health sync task:', error);
+            console.error('Error stopping health sync manager:', error);
         }
     }
     
@@ -241,7 +238,7 @@ const shutdown = async () => {
     }, 10000);
 };
 
-// Error handling for uncaught exceptions
+// Error handling
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     shutdown();

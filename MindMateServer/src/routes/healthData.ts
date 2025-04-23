@@ -32,15 +32,15 @@ const authenticateToken = async (req: any, res: any, next: any) => {
 router.post('/sync', authenticateToken, async (req: any, res) => {
   try {
     const healthData = req.body;
-    
+
     // Validate the request body
     if (!healthData) {
       return res.status(400).json({ error: 'Health data is required' });
     }
-    
+
     // Process and save the health data
     const result = await healthDataSyncService.saveHealthData(req.userId, healthData);
-    
+
     if (result.success) {
       res.status(200).json({ message: result.message });
     } else {
@@ -56,13 +56,13 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
 router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
   try {
     const { days } = req.body;
-    
+
     if (!days || typeof days !== 'object') {
       return res.status(400).json({ error: 'Health data is required in the format {days: {...}}' });
     }
-    
+
     console.log(`Received health data for ${Object.keys(days).length} days`);
-    
+
     // Track stats
     const stats = {
       totalDays: Object.keys(days).length,
@@ -81,17 +81,17 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
       },
       errors: 0
     };
-    
+
     // Process each day's data
     for (const dateStr of Object.keys(days)) {
       const dayData = days[dateStr];
-      
+
       try {
         stats.processed++;
-        
+
         // Convert date string to Date object (assumes YYYY-MM-DD format)
         const recordDate = new Date(`${dateStr}T00:00:00.000Z`);
-        
+
         // Process steps data if available
         if (dayData.steps) {
           const result = await processStepsData(req.userId, recordDate, dayData.steps);
@@ -101,7 +101,7 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
             stats.updated.steps++;
           }
         }
-        
+
         // Process distance data if available
         if (dayData.distance) {
           const result = await processDistanceData(req.userId, recordDate, dayData.distance);
@@ -111,7 +111,7 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
             stats.updated.distance++;
           }
         }
-        
+
         // Process sleep data if available
         if (dayData.sleep) {
           const result = await processSleepData(req.userId, recordDate, dayData.sleep);
@@ -121,7 +121,7 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
             stats.updated.sleep++;
           }
         }
-        
+
         // Process exercise data if available
         if (dayData.exercise) {
           const result = await processExerciseData(req.userId, recordDate, dayData.exercise);
@@ -136,13 +136,13 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
         stats.errors++;
       }
     }
-    
+
     // Update last sync time for the user's devices
     await DeviceToken.updateMany(
       { userId: new Types.ObjectId(req.userId) },
       { $set: { 'metadata.lastHealthSync': new Date() } }
     );
-    
+
     // Create a message summarizing what was done
     const createdTotal = stats.created.steps + stats.created.distance + stats.created.sleep + stats.created.exercise;
     const updatedTotal = stats.updated.steps + stats.updated.distance + stats.updated.sleep + stats.updated.exercise;
@@ -150,8 +150,11 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
     const message = `Successfully processed ${stats.processed} days of health data. ` +
       `Created ${createdTotal} new records and updated ${updatedTotal} existing records.`;
     
+    // Change success flag to be false if there were any errors
+    const success = stats.errors === 0;
+    
     res.status(200).json({ 
-      success: true, 
+      success,
       message, 
       stats 
     });
@@ -165,11 +168,11 @@ router.post('/sync-multiple', authenticateToken, async (req: any, res) => {
 router.get('/last-sync', authenticateToken, async (req: any, res) => {
   try {
     const lastSyncTime = await healthDataSyncService.getLastSyncTime(req.userId);
-    
+
     res.json({
       lastSyncTime,
-      message: lastSyncTime 
-        ? `Last sync was at ${lastSyncTime.toISOString()}` 
+      message: lastSyncTime
+        ? `Last sync was at ${lastSyncTime.toISOString()}`
         : 'No sync history found'
     });
   } catch (error) {
@@ -182,22 +185,22 @@ router.get('/last-sync', authenticateToken, async (req: any, res) => {
 router.get('/aggregate', authenticateToken, async (req: any, res) => {
   try {
     const { startDate, endDate, aggregateBy } = req.query;
-    
+
     // Validate required parameters
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'Start date and end date are required' });
     }
-    
+
     // Validate aggregation type
     const validAggregationTypes = ['daily', 'weekly', 'monthly'];
     const aggregationType = aggregateBy || 'daily';
-    
+
     if (!validAggregationTypes.includes(aggregationType)) {
-      return res.status(400).json({ 
-        error: `Invalid aggregation type. Must be one of: ${validAggregationTypes.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid aggregation type. Must be one of: ${validAggregationTypes.join(', ')}`
       });
     }
-    
+
     // Get aggregated data
     const data = await healthDataSyncService.getAggregatedHealthData(
       req.userId,
@@ -205,7 +208,7 @@ router.get('/aggregate', authenticateToken, async (req: any, res) => {
       new Date(endDate),
       aggregationType as 'daily' | 'weekly' | 'monthly'
     );
-    
+
     res.json(data);
   } catch (error) {
     console.error('Error getting aggregated health data:', error);
@@ -218,25 +221,25 @@ router.get('/recent/:dataType', authenticateToken, async (req: any, res) => {
   try {
     const { dataType } = req.params;
     const { limit = 10 } = req.query;
-    
+
     // Validate data type
     const validDataTypes = ['steps', 'distance', 'sleep', 'exercise'];
-    
+
     if (!validDataTypes.includes(dataType)) {
-      return res.status(400).json({ 
-        error: `Invalid data type. Must be one of: ${validDataTypes.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid data type. Must be one of: ${validDataTypes.join(', ')}`
       });
     }
-    
+
     // Fetch recent data
     const recentData = await HealthData.find({
       userId: new Types.ObjectId(req.userId),
       dataType
     })
-    .sort({ date: -1 })
-    .limit(parseInt(limit as string))
-    .lean();
-    
+      .sort({ date: -1 })
+      .limit(parseInt(limit as string))
+      .lean();
+
     res.json(recentData);
   } catch (error) {
     console.error('Error getting recent health data:', error);
@@ -248,25 +251,25 @@ router.get('/recent/:dataType', authenticateToken, async (req: any, res) => {
 router.delete('/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params;
-    
+
     // Validate ID
     if (!Types.ObjectId.isValid(id)) {
       throw new ApiError(400, 'Invalid health data ID');
     }
-    
+
     // Find the record
     const record = await HealthData.findOne({
       _id: id,
       userId: new Types.ObjectId(req.userId)
     });
-    
+
     if (!record) {
       throw new ApiError(404, 'Health data record not found');
     }
-    
+
     // Delete the record
     await record.deleteOne();
-    
+
     res.json({ message: 'Health data record deleted successfully' });
   } catch (error) {
     if (error instanceof ApiError) {
@@ -280,20 +283,32 @@ router.delete('/:id', authenticateToken, async (req: any, res) => {
 
 // Helper functions to process each type of health data
 
+// Below are the modified processing functions:
 async function processStepsData(userId: string, date: Date, stepsData: any) {
   // Generate a unique original ID for deduplication
   const originalId = `steps_${userId}_${date.toISOString().split('T')[0]}`;
-  
+
+  // Calculate required fields
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  // Calculate ISO week number
+  const d = new Date(Date.UTC(year, month, date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+
   // Check if record already exists
-  const existingRecord = await HealthData.findOne({ 
+  const existingRecord = await HealthData.findOne({
     userId: new Types.ObjectId(userId),
     dataType: 'steps',
-    date: { 
-      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+    date: {
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
       $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
     }
   });
-  
+
   if (existingRecord) {
     // Update existing record if count changed
     if (existingRecord.stepsData?.count !== stepsData.count) {
@@ -304,11 +319,14 @@ async function processStepsData(userId: string, date: Date, stepsData: any) {
     }
     return { updated: false };
   } else {
-    // Create new record
+    // Create new record with explicitly set fields
     await HealthData.create({
       userId: new Types.ObjectId(userId),
       dataType: 'steps',
       date,
+      year,         // Added explicit value
+      month,        // Added explicit value
+      weekNumber,   // Added explicit value
       stepsData: {
         count: stepsData.count,
         startTime: new Date(stepsData.startTime),
@@ -325,17 +343,28 @@ async function processStepsData(userId: string, date: Date, stepsData: any) {
 async function processDistanceData(userId: string, date: Date, distanceData: any) {
   // Generate a unique original ID for deduplication
   const originalId = `distance_${userId}_${date.toISOString().split('T')[0]}`;
-  
+
+  // Calculate required fields
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  // Calculate ISO week number
+  const d = new Date(Date.UTC(year, month, date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+
   // Check if record already exists
-  const existingRecord = await HealthData.findOne({ 
+  const existingRecord = await HealthData.findOne({
     userId: new Types.ObjectId(userId),
     dataType: 'distance',
-    date: { 
-      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+    date: {
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
       $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
     }
   });
-  
+
   if (existingRecord) {
     // Update existing record if distance changed
     if (existingRecord.distanceData?.distance.inMeters !== distanceData.inMeters) {
@@ -347,11 +376,14 @@ async function processDistanceData(userId: string, date: Date, distanceData: any
     }
     return { updated: false };
   } else {
-    // Create new record
+    // Create new record with explicitly set fields
     await HealthData.create({
       userId: new Types.ObjectId(userId),
       dataType: 'distance',
       date,
+      year,         // Added explicit value
+      month,        // Added explicit value
+      weekNumber,   // Added explicit value
       distanceData: {
         distance: {
           inMeters: distanceData.inMeters,
@@ -371,17 +403,28 @@ async function processDistanceData(userId: string, date: Date, distanceData: any
 async function processSleepData(userId: string, date: Date, sleepData: any) {
   // Generate a unique original ID for deduplication
   const originalId = `sleep_${userId}_${date.toISOString().split('T')[0]}`;
-  
+
+  // Calculate required fields
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  // Calculate ISO week number
+  const d = new Date(Date.UTC(year, month, date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+
   // Check if record already exists
-  const existingRecord = await HealthData.findOne({ 
+  const existingRecord = await HealthData.findOne({
     userId: new Types.ObjectId(userId),
     dataType: 'sleep',
-    date: { 
-      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
+    date: {
+      $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
       $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
     }
   });
-  
+
   if (existingRecord) {
     // Update existing record if duration changed
     if (existingRecord.sleepData?.durationInSeconds !== sleepData.durationInSeconds) {
@@ -395,11 +438,14 @@ async function processSleepData(userId: string, date: Date, sleepData: any) {
     }
     return { updated: false };
   } else {
-    // Create new record
+    // Create new record with explicitly set fields
     await HealthData.create({
       userId: new Types.ObjectId(userId),
       dataType: 'sleep',
       date,
+      year,         // Added explicit value
+      month,        // Added explicit value
+      weekNumber,   // Added explicit value
       sleepData: {
         startTime: new Date(sleepData.startTime),
         endTime: new Date(sleepData.endTime),
@@ -418,6 +464,17 @@ async function processExerciseData(userId: string, date: Date, exerciseData: any
   // Generate a unique original ID for deduplication
   const originalId = `exercise_${userId}_${exerciseData.type}_${date.toISOString().split('T')[0]}`;
   
+  // Calculate required fields
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  
+  // Calculate ISO week number
+  const d = new Date(Date.UTC(year, month, date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  
   // Check if record already exists
   const existingRecord = await HealthData.findOne({ 
     userId: new Types.ObjectId(userId),
@@ -426,43 +483,60 @@ async function processExerciseData(userId: string, date: Date, exerciseData: any
       $gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()), 
       $lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
     },
-    'exerciseData.type': exerciseData.type
+    // Remove object path querying since exerciseData is stored as a string
+    // 'exerciseData.type': exerciseData.type 
   });
   
   if (existingRecord) {
+    // We need to parse the string back to an object for comparison
+    let existingExerciseData;
+    try {
+      existingExerciseData = JSON.parse(existingRecord.exerciseData as string);
+    } catch (err) {
+      // If parsing fails, assume data is different
+      existingExerciseData = { durationInSeconds: 0 };
+    }
+    
     // Update existing record if duration changed
-    if (existingRecord.exerciseData?.durationInSeconds !== exerciseData.durationInSeconds) {
-      existingRecord.exerciseData.durationInSeconds = exerciseData.durationInSeconds;
-      existingRecord.exerciseData.calories = exerciseData.calories;
-      if (exerciseData.distance) {
-        existingRecord.exerciseData.distance = {
-          inMeters: exerciseData.distance.inMeters,
-          inKilometers: exerciseData.distance.inKilometers
-        };
-      }
+    if (existingExerciseData.durationInSeconds !== exerciseData.durationInSeconds) {
+      // Create updated data and stringify it
+      const updatedData = {
+        type: exerciseData.type,
+        startTime: new Date(exerciseData.startTime),
+        endTime: new Date(exerciseData.endTime),
+        durationInSeconds: exerciseData.durationInSeconds,
+        calories: exerciseData.calories,
+        distance: exerciseData.distance,
+        dataSource: exerciseData.dataOrigins?.join(', ') || 'unknown'
+      };
+      
+      existingRecord.exerciseData = JSON.stringify(updatedData);
       existingRecord.lastSyncedAt = new Date();
       await existingRecord.save();
       return { updated: true };
     }
     return { updated: false };
   } else {
-    // Create new record
+    // Create new record with explicitly set fields
+    const exerciseDataObj = {
+      type: exerciseData.type,
+      startTime: new Date(exerciseData.startTime),
+      endTime: new Date(exerciseData.endTime),
+      durationInSeconds: exerciseData.durationInSeconds,
+      calories: exerciseData.calories,
+      distance: exerciseData.distance,
+      dataSource: exerciseData.dataOrigins?.join(', ') || 'unknown'
+    };
+    
     await HealthData.create({
       userId: new Types.ObjectId(userId),
       dataType: 'exercise',
       date,
-      exerciseData: {
-        type: exerciseData.type,
-        startTime: new Date(exerciseData.startTime),
-        endTime: new Date(exerciseData.endTime),
-        durationInSeconds: exerciseData.durationInSeconds,
-        calories: exerciseData.calories,
-        distance: exerciseData.distance ? {
-          inMeters: exerciseData.distance.inMeters,
-          inKilometers: exerciseData.distance.inKilometers
-        } : undefined,
-        dataSource: exerciseData.dataOrigins?.join(', ') || 'unknown'
-      },
+      year,
+      month,
+      weekNumber,
+      // Convert object to string for storage
+      exerciseData: JSON.stringify(exerciseDataObj),
       lastSyncedAt: new Date(),
       originalId
     });
