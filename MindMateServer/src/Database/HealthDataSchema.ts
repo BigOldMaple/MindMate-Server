@@ -30,12 +30,6 @@ export interface IHealthData extends Document {
     endTime: Date;
     durationInSeconds: number;
     quality?: 'poor' | 'fair' | 'good';
-    stages?: Array<{
-      stageType: string;
-      startTime: Date;
-      endTime: Date;
-      durationInSeconds: number;
-    }>;
     dataSource?: string;
   };
   
@@ -116,14 +110,6 @@ const healthDataSchema = new Schema<IHealthData>(
         type: String,
         enum: ['poor', 'fair', 'good'],
       },
-      stages: [
-        {
-          stageType: String,
-          startTime: Date,
-          endTime: Date,
-          durationInSeconds: Number,
-        },
-      ],
       dataSource: String,
     },
     exercises: [{

@@ -28,13 +28,6 @@ interface Exercise {
   dataSource?: string;
 }
 
-interface SleepStage {
-  stageType: string;
-  startTime: Date;
-  endTime: Date;
-  durationInSeconds: number;
-}
-
 interface HealthDayData {
   date: Date;
   steps?: {
@@ -55,7 +48,6 @@ interface HealthDayData {
     endTime: Date;
     durationInSeconds: number;
     quality?: string;
-    stages?: SleepStage[];
     dataSource?: string;
   };
   exercises: Exercise[];
@@ -764,10 +756,9 @@ export const formatSleepDuration = (durationInMillis: number): string => {
   return `${hours}h ${minutes}m`;
 };
 
-// Helper to get sleep quality description based on duration and stages
+// Helper to get sleep quality description based on duration
 export const getSleepQualityDescription = (
-  durationInMillis: number,
-  deepSleepPercentage: number = 0
+  durationInMillis: number
 ): { quality: 'poor' | 'fair' | 'good'; description: string } => {
   const hoursSlept = durationInMillis / 3600000;
   
@@ -780,11 +771,6 @@ export const getSleepQualityDescription = (
     return {
       quality: 'fair',
       description: 'Excessive sleep duration. Consider checking for sleep quality issues.'
-    };
-  } else if (deepSleepPercentage < 15 && deepSleepPercentage > 0) {
-    return {
-      quality: 'fair',
-      description: 'Lower than ideal deep sleep percentage. Deep sleep is important for recovery.'
     };
   } else if (hoursSlept >= 7 && hoursSlept <= 9) {
     return {

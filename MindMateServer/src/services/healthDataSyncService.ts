@@ -37,12 +37,6 @@ interface HealthDataSync {
     endTime: string;
     durationInSeconds: number;
     quality?: string;
-    stages?: Array<{
-      stageType: string;
-      startTime: string;
-      endTime: string;
-      durationInSeconds: number;
-    }>;
     dataOrigins?: string[];
   };
   exercise?: {
@@ -295,7 +289,7 @@ class HealthDataSyncService {
    * Process sleep data and save to the day-centric model
    */
   private async processSleepData(userId: string, sleepData: any): Promise<void> {
-    const { startTime, endTime, durationInSeconds, quality, stages, dataOrigins } = sleepData;
+    const { startTime, endTime, durationInSeconds, quality, dataOrigins } = sleepData;
     
     // Sleep should be attributed to the day the person woke up (end time)
     const endDate = new Date(endTime);
@@ -308,12 +302,6 @@ class HealthDataSyncService {
       endTime: new Date(endTime),
       durationInSeconds,
       quality,
-      stages: stages?.map((stage: any) => ({
-        stageType: stage.stageType,
-        startTime: new Date(stage.startTime),
-        endTime: new Date(stage.endTime),
-        durationInSeconds: stage.durationInSeconds
-      })),
       dataSource: dataOrigins?.join(', ') || 'unknown'
     };
 
