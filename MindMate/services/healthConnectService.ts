@@ -14,6 +14,61 @@ import * as SecureStore from 'expo-secure-store';
 import { auth } from './auth';
 import { getApiConfig } from './apiConfig';
 
+// Define interfaces for type safety
+interface Exercise {
+  type: string;
+  startTime: Date;
+  endTime: Date;
+  durationInSeconds: number;
+  calories?: number;
+  distance?: {
+    inMeters?: number;
+    inKilometers?: number;
+  };
+  dataSource?: string;
+}
+
+interface SleepStage {
+  stageType: string;
+  startTime: Date;
+  endTime: Date;
+  durationInSeconds: number;
+}
+
+interface HealthDayData {
+  date: Date;
+  steps?: {
+    count: number;
+    startTime: Date;
+    endTime: Date;
+    dataSource?: string;
+  };
+  distance?: {
+    inMeters: number;
+    inKilometers: number;
+    startTime: Date;
+    endTime: Date;
+    dataSource?: string;
+  };
+  sleep?: {
+    startTime: Date;
+    endTime: Date;
+    durationInSeconds: number;
+    quality?: string;
+    stages?: SleepStage[];
+    dataSource?: string;
+  };
+  exercises: Exercise[];
+  summary: {
+    totalSteps: number;
+    totalDistanceMeters: number;
+    totalSleepSeconds: number;
+    totalExerciseSeconds: number;
+    exerciseCount: number;
+  };
+}
+
+// Define Health Connect record types
 type ExerciseSessionRecord = {
   exerciseType: number;
   startTime: string;
@@ -44,12 +99,6 @@ export enum SleepStageType {
   DEEP = 5,
   REM = 6,
 }
-
-export type SleepStage = {
-  startTime: string;
-  endTime: string;
-  stage: SleepStageType;
-};
 
 // ========== Exercise Related Types ==========
 export enum ExerciseType {
@@ -95,6 +144,26 @@ export const checkHealthConnectAvailability = async (): Promise<number> => {
 };
 
 /**
+ * Helper function to get midnight date for a given date
+ */
+const getMidnightDate = (date: Date): Date => {
+  const midnight = new Date(date);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight;
+};
+
+/**
+ * Helper function to calculate ISO week number
+ */
+const getWeekNumber = (date: Date): number => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+};
+
+/**
  * Syncs all available historical health data from Health Connect
  * 
  * @returns {Promise<{success: boolean, message: string, days?: number}>}
@@ -132,12 +201,37 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
     
     console.log(`[HealthConnect] Fetching historical data from ${startTime} to ${endTime}`);
     
-    // Object to store daily health data
-    // Format: { 'YYYY-MM-DD': { steps: {...}, sleep: {...}, ... } }
-    const dailyHealthData: Record<string, any> = {};
+    // Create a map to store day-centric health data
+    // Key: YYYY-MM-DD, Value: HealthDayData
+    const dailyHealthData: Record<string, HealthDayData> = {};
     
     // Track days with data for stats
     let daysWithData = 0;
+    
+    // Function to get or create a day record
+    const getOrCreateDayRecord = (date: Date): HealthDayData => {
+      const dateStr = date.toISOString().split('T')[0];
+      
+      if (!dailyHealthData[dateStr]) {
+        const midnight = getMidnightDate(date);
+        
+        dailyHealthData[dateStr] = {
+          date: midnight,
+          exercises: [],
+          summary: {
+            totalSteps: 0,
+            totalDistanceMeters: 0,
+            totalSleepSeconds: 0,
+            totalExerciseSeconds: 0,
+            exerciseCount: 0
+          }
+        };
+        
+        daysWithData++;
+      }
+      
+      return dailyHealthData[dateStr];
+    };
     
     // Fetch and process steps data
     if (hasSteps) {
@@ -151,12 +245,13 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
         // Process each record and organize by day
         for (const record of stepsRecords) {
           // Use date (YYYY-MM-DD) as key
-          const date = new Date(record.startTime);
-          const dateStr = date.toISOString().split('T')[0];
+          const recordDate = new Date(record.startTime);
+          const dayRecord = getOrCreateDayRecord(recordDate);
           
           // Get steps for this specific day
-          const dayStart = new Date(dateStr + 'T00:00:00.000Z');
-          const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
+          const dayStart = getMidnightDate(recordDate);
+          const dayEnd = new Date(dayStart);
+          dayEnd.setHours(23, 59, 59, 999);
           
           const stepsData = await getAggregatedSteps(
             dayStart.toISOString(), 
@@ -164,17 +259,14 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
           );
           
           if (stepsData && stepsData.COUNT_TOTAL) {
-            if (!dailyHealthData[dateStr]) {
-              dailyHealthData[dateStr] = {};
-              daysWithData++;
-            }
-            
-            dailyHealthData[dateStr].steps = {
+            dayRecord.steps = {
               count: stepsData.COUNT_TOTAL,
-              startTime: dayStart.toISOString(),
-              endTime: dayEnd.toISOString(),
-              dataOrigins: stepsData.dataOrigins || []
+              startTime: new Date(record.startTime),
+              endTime: new Date(record.endTime),
+              dataSource: stepsData.dataOrigins?.join(', ') || 'unknown'
             };
+            
+            dayRecord.summary.totalSteps = stepsData.COUNT_TOTAL;
           }
         }
       } catch (error) {
@@ -189,11 +281,12 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
         console.log(`[HealthConnect] Found ${distanceRecords.length} distance records`);
         
         for (const record of distanceRecords) {
-          const date = new Date(record.startTime);
-          const dateStr = date.toISOString().split('T')[0];
+          const recordDate = new Date(record.startTime);
+          const dayRecord = getOrCreateDayRecord(recordDate);
           
-          const dayStart = new Date(dateStr + 'T00:00:00.000Z');
-          const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
+          const dayStart = getMidnightDate(recordDate);
+          const dayEnd = new Date(dayStart);
+          dayEnd.setHours(23, 59, 59, 999);
           
           const distanceData = await getAggregatedDistance(
             dayStart.toISOString(), 
@@ -201,18 +294,15 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
           );
           
           if (distanceData && distanceData.DISTANCE?.inMeters) {
-            if (!dailyHealthData[dateStr]) {
-              dailyHealthData[dateStr] = {};
-              daysWithData++;
-            }
-            
-            dailyHealthData[dateStr].distance = {
+            dayRecord.distance = {
               inMeters: distanceData.DISTANCE.inMeters,
               inKilometers: distanceData.DISTANCE.inKilometers,
-              startTime: dayStart.toISOString(),
-              endTime: dayEnd.toISOString(),
-              dataOrigins: distanceData.dataOrigins || []
+              startTime: new Date(record.startTime),
+              endTime: new Date(record.endTime),
+              dataSource: distanceData.dataOrigins?.join(', ') || 'unknown'
             };
+            
+            dayRecord.summary.totalDistanceMeters = distanceData.DISTANCE.inMeters;
           }
         }
       } catch (error) {
@@ -229,9 +319,9 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
         console.log(`[HealthConnect] Found ${sleepSessions.length} sleep sessions`);
         
         for (const session of sleepSessions) {
-          // Use the end date as the day the sleep belongs to
+          // Sleep should be attributed to the day the person woke up (end date)
           const endDate = new Date(session.endTime);
-          const dateStr = endDate.toISOString().split('T')[0];
+          const dayRecord = getOrCreateDayRecord(endDate);
           
           // Calculate duration
           const startTime = new Date(session.startTime).getTime();
@@ -248,18 +338,15 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
             quality = 'good';
           }
           
-          if (!dailyHealthData[dateStr]) {
-            dailyHealthData[dateStr] = {};
-            daysWithData++;
-          }
-          
-          dailyHealthData[dateStr].sleep = {
-            startTime: session.startTime,
-            endTime: session.endTime,
+          dayRecord.sleep = {
+            startTime: new Date(session.startTime),
+            endTime: endDate,
             durationInSeconds,
             quality,
-            dataOrigins: [session.metadata?.dataOrigin || 'unknown']
+            dataSource: session.metadata?.dataOrigin || 'unknown'
           };
+          
+          dayRecord.summary.totalSleepSeconds = durationInSeconds;
         }
       } catch (error) {
         console.error('[HealthConnect] Error fetching sleep data:', error);
@@ -275,61 +362,47 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
         console.log(`[HealthConnect] Found ${exerciseSessions.length} exercise sessions`);
         
         for (const session of exerciseSessions as unknown as ExerciseSessionRecord[]) {
-          // Use start date of the exercise
+          // Exercise is attributed to the day it started
           const startDate = new Date(session.startTime);
-          const dateStr = startDate.toISOString().split('T')[0];
+          const dayRecord = getOrCreateDayRecord(startDate);
           
           // Calculate duration
-          const endTime = new Date(session.endTime).getTime();
-          const durationInSeconds = Math.round((endTime - startDate.getTime()) / 1000);
+          const endDate = new Date(session.endTime);
+          const durationInSeconds = Math.round((endDate.getTime() - startDate.getTime()) / 1000);
           
-          const exerciseData: any = {
+          // Create exercise object
+          const exercise: Exercise = {
             type: session.exerciseType.toString(),
-            startTime: session.startTime,
-            endTime: session.endTime,
+            startTime: startDate,
+            endTime: endDate,
             durationInSeconds,
-            dataOrigins: [session.metadata?.dataOrigin || 'unknown']
+            dataSource: session.metadata?.dataOrigin || 'unknown'
           };
           
           // Add calories if available
           if (session.energy && 
               (session.energy.inKilocalories || 
                session.energy.inCalories)) {
-            exerciseData.calories = session.energy.inKilocalories || 
-                                   (session.energy.inCalories ? session.energy.inCalories / 1000 : undefined);
+            exercise.calories = session.energy.inKilocalories || 
+                               (session.energy.inCalories ? session.energy.inCalories / 1000 : undefined);
           }
           
           // Add distance if available
           if (session.distance) {
-            exerciseData.distance = {
+            exercise.distance = {
               inMeters: session.distance.inMeters,
               inKilometers: session.distance.inKilometers
             };
           }
           
-          if (!dailyHealthData[dateStr]) {
-            dailyHealthData[dateStr] = {};
-            daysWithData++;
-          }
+          // Add exercise to array
+          dayRecord.exercises.push(exercise);
           
-          // If we already have exercise data for this day, store as an array
-          if (dailyHealthData[dateStr].exercise) {
-            if (!dailyHealthData[dateStr].exercises) {
-              dailyHealthData[dateStr].exercises = [dailyHealthData[dateStr].exercise];
-            }
-            
-            dailyHealthData[dateStr].exercises.push(exerciseData);
-            
-            // Update total exercise duration
-            dailyHealthData[dateStr].exercise.durationInSeconds += durationInSeconds;
-            
-            // Update calories if available
-            if (exerciseData.calories && dailyHealthData[dateStr].exercise.calories) {
-              dailyHealthData[dateStr].exercise.calories += exerciseData.calories;
-            }
-          } else {
-            dailyHealthData[dateStr].exercise = exerciseData;
-          }
+          // Update exercise summary
+          dayRecord.summary.exerciseCount = dayRecord.exercises.length;
+          dayRecord.summary.totalExerciseSeconds = dayRecord.exercises.reduce(
+            (total: number, ex: Exercise) => total + ex.durationInSeconds, 0
+          );
         }
       } catch (error) {
         console.error('[HealthConnect] Error fetching exercise data:', error);
@@ -358,7 +431,7 @@ export const syncHistoricalHealthData = async (): Promise<{success: boolean, mes
       };
     }
     
-    // Send data to server using the new sync-multiple endpoint
+    // Send data to server using the updated sync-multiple endpoint
     console.log(`[HealthConnect] Sending data for ${daysWithData} days to server`);
     const response = await fetch(`${apiConfig.baseUrl}/health-data/sync-multiple`, {
       method: 'POST',
@@ -591,49 +664,6 @@ export const getAggregatedDistance = async (startTime: string, endTime: string) 
   }
 };
 
-// Insert steps data
-export const insertStepsData = async (count: number, startTime: string, endTime: string) => {
-  try {
-    const recordIds = await insertRecords([
-      {
-        recordType: 'Steps',
-        count,
-        startTime,
-        endTime,
-      },
-    ]);
-    return recordIds;
-  } catch (error) {
-    console.error('Error inserting steps data:', error);
-    return [];
-  }
-};
-
-// Insert distance data
-export const insertDistanceData = async (
-  distance: number,
-  startTime: string,
-  endTime: string
-) => {
-  try {
-    const recordIds = await insertRecords([
-      {
-        recordType: 'Distance',
-        distance: {
-          value: distance,
-          unit: 'meters',
-        },
-        startTime,
-        endTime,
-      },
-    ]);
-    return recordIds;
-  } catch (error) {
-    console.error('Error inserting distance data:', error);
-    return [];
-  }
-};
-
 // ========== Sleep Functions ==========
 
 // Read sleep sessions for a specific time range
@@ -650,30 +680,6 @@ export const readSleepSessions = async (startTime: string, endTime: string) => {
     return response.records;
   } catch (error) {
     console.error('Error reading sleep sessions:', error);
-    return [];
-  }
-};
-
-// Insert a sleep session
-export const insertSleepSession = async (
-  startTime: string,
-  endTime: string,
-  notes: string = '',
-  stages: SleepStage[] = []
-) => {
-  try {
-    const recordIds = await insertRecords([
-      {
-        recordType: 'SleepSession',
-        startTime,
-        endTime,
-        notes,
-        stages,
-      },
-    ]);
-    return recordIds;
-  } catch (error) {
-    console.error('Error inserting sleep session:', error);
     return [];
   }
 };
@@ -717,49 +723,6 @@ export const readExerciseSessions = async (startTime: string, endTime: string) =
   }
 };
 
-// Insert an exercise session
-export const insertExerciseSession = async (
-  exerciseType: ExerciseType,
-  startTime: string,
-  endTime: string,
-  title?: string,
-  notes?: string,
-  energyInKcal?: number,
-  distanceInMeters?: number
-) => {
-  try {
-    const session: any = {
-      recordType: 'ExerciseSession',
-      startTime,
-      endTime,
-      exerciseType,
-    };
-
-    if (title) session.title = title;
-    if (notes) session.notes = notes;
-    
-    if (energyInKcal) {
-      session.energy = {
-        value: energyInKcal,
-        unit: 'kilocalories',
-      };
-    }
-    
-    if (distanceInMeters) {
-      session.distance = {
-        value: distanceInMeters,
-        unit: 'meters',
-      };
-    }
-
-    const recordIds = await insertRecords([session]);
-    return recordIds;
-  } catch (error) {
-    console.error('Error inserting exercise session:', error);
-    return [];
-  }
-};
-
 // Get aggregated exercise data
 export const getTotalExerciseStats = async (startTime: string, endTime: string) => {
   try {
@@ -775,76 +738,6 @@ export const getTotalExerciseStats = async (startTime: string, endTime: string) 
     return result;
   } catch (error) {
     console.error('Error getting exercise aggregates:', error);
-    return null;
-  }
-};
-
-// Analyze exercise patterns for mental health insights
-export const analyzeExercisePatterns = async (startTime: string, endTime: string) => {
-  try {
-    const exerciseSessions = await readExerciseSessions(startTime, endTime);
-    const exerciseStats = await getTotalExerciseStats(startTime, endTime);
-    
-    // Calculate days between start and end
-    const startDate = new Date(startTime);
-    const endDate = new Date(endTime);
-    const daysDiff = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    // Analysis results
-    const result = {
-      sessionsCount: exerciseSessions.length,
-      averageSessionsPerWeek: (exerciseSessions.length / daysDiff) * 7,
-      totalDuration: Number(exerciseStats?.EXERCISE_DURATION_TOTAL || 0),
-      averageDurationPerSession: exerciseSessions.length ? 
-        Number(exerciseStats?.EXERCISE_DURATION_TOTAL || 0) / exerciseSessions.length : 0,
-      consistencyScore: 0,
-      varietyScore: 0,
-      mentalHealthInsight: ''
-    };
-    
-    // Calculate consistency (how regularly spaced the sessions are)
-    if (exerciseSessions.length > 1) {
-      const sortedSessions = [...exerciseSessions].sort((a, b) => 
-        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-      );
-      
-      const timeGaps = [];
-      for (let i = 1; i < sortedSessions.length; i++) {
-        const prevTime = new Date(sortedSessions[i-1].startTime).getTime();
-        const currTime = new Date(sortedSessions[i].startTime).getTime();
-        timeGaps.push(currTime - prevTime);
-      }
-      
-      // Standard deviation of gaps (lower is more consistent)
-      const avgGap = timeGaps.reduce((sum, gap) => sum + gap, 0) / timeGaps.length;
-      const variance = timeGaps.reduce((sum, gap) => sum + Math.pow(gap - avgGap, 2), 0) / timeGaps.length;
-      const stdDev = Math.sqrt(variance);
-      
-      // Convert to a 0-100 score (lower stdDev means higher consistency)
-      const maxStdDev = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
-      result.consistencyScore = Math.max(0, Math.min(100, 100 - (stdDev / maxStdDev * 100)));
-    }
-    
-    // Calculate variety (different types of exercise)
-    const uniqueTypes = new Set(exerciseSessions.map(s => s.exerciseType)).size;
-    result.varietyScore = Math.min(100, uniqueTypes * 20); // Each type is worth 20 points, max 100
-    
-    // Generate insight
-    if (result.sessionsCount === 0) {
-      result.mentalHealthInsight = "No exercise detected. Regular physical activity can help improve mood and reduce stress and anxiety.";
-    } else if (result.averageSessionsPerWeek < 2) {
-      result.mentalHealthInsight = "Low exercise frequency. Aim for at least 3 sessions per week for mental health benefits.";
-    } else if (result.consistencyScore < 40) {
-      result.mentalHealthInsight = "Exercise pattern is irregular. Consistent exercise schedules can help regulate mood and energy levels.";
-    } else if (result.varietyScore < 40) {
-      result.mentalHealthInsight = "Limited exercise variety. Trying different activities can increase engagement and psychological benefits.";
-    } else {
-      result.mentalHealthInsight = "Good exercise patterns! Your consistent and varied exercise routine is ideal for mental wellbeing.";
-    }
-    
-    return result;
-  } catch (error) {
-    console.error('Error analyzing exercise patterns:', error);
     return null;
   }
 };

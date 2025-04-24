@@ -1,7 +1,63 @@
-// server/services/healthDataSyncService.ts
+// services/healthDataSyncService.ts
+
 import { HealthData } from '../Database/HealthDataSchema';
 import { Types } from 'mongoose';
 import { DeviceToken } from '../Database/DeviceTokenSchema';
+
+// Define interfaces for type safety
+interface Exercise {
+  type: string;
+  startTime: Date;
+  endTime: Date;
+  durationInSeconds: number;
+  calories?: number;
+  distance?: {
+    inMeters?: number;
+    inKilometers?: number;
+  };
+  dataSource?: string;
+}
+
+interface HealthDataSync {
+  steps?: {
+    count: number;
+    startTime: string;
+    endTime: string;
+    dataOrigins?: string[];
+  };
+  distance?: {
+    inMeters: number;
+    inKilometers: number;
+    startTime: string;
+    endTime: string;
+    dataOrigins?: string[];
+  };
+  sleep?: {
+    startTime: string;
+    endTime: string;
+    durationInSeconds: number;
+    quality?: string;
+    stages?: Array<{
+      stageType: string;
+      startTime: string;
+      endTime: string;
+      durationInSeconds: number;
+    }>;
+    dataOrigins?: string[];
+  };
+  exercise?: {
+    type: string;
+    startTime: string;
+    endTime: string;
+    durationInSeconds: number;
+    calories?: number;
+    distance?: {
+      inMeters?: number;
+      inKilometers?: number;
+    };
+    dataOrigins?: string[];
+  };
+}
 
 // Helper function to calculate ISO week number
 function getWeekNumber(date: Date): number {
@@ -12,53 +68,9 @@ function getWeekNumber(date: Date): number {
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-interface HealthDataSync {
-  steps?: {
-    count: number;
-    startTime: string;
-    endTime: string;
-    dataOrigins: string[];
-  };
-  distance?: {
-    inMeters: number;
-    inKilometers: number;
-    startTime: string;
-    endTime: string;
-    dataOrigins: string[];
-  };
-  sleep?: {
-    startTime: string;
-    endTime: string;
-    durationInSeconds: number;
-    quality: string;
-    stages?: Array<{
-      stageType: string;
-      startTime: string;
-      endTime: string;
-      durationInSeconds: number;
-    }>;
-    dataOrigins: string[];
-  };
-  exercise?: {
-    type: string;
-    startTime: string;
-    endTime: string;
-    durationInSeconds: number;
-    calories?: number;
-    distance?: {
-      inMeters: number;
-      inKilometers: number;
-    };
-    dataOrigins: string[];
-  };
-}
-
 class HealthDataSyncService {
   /**
    * Save health data received from the mobile app
-   * @param userId User ID
-   * @param healthData Health data to save
-   * @returns Result of the operation
    */
   async saveHealthData(userId: string, healthData: HealthDataSync): Promise<{ success: boolean; message: string }> {
     try {
@@ -72,251 +84,28 @@ class HealthDataSyncService {
         exercise: false
       };
 
-      // First, check if we have synced historical data before
-      // If we've synced data for a week or more in the past, we'll assume historical sync is complete
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      
-      const hasHistoricalData = await HealthData.exists({
-        userId: new Types.ObjectId(userId),
-        date: { $lt: oneWeekAgo }
-      });
-      
-      // If we have historical data, only update today's records
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Save steps data if provided
+      // Process steps data
       if (healthData.steps) {
-        const { count, startTime, endTime, dataOrigins } = healthData.steps;
-        const startDate = new Date(startTime);
-        const endDate = new Date(endTime);
-        
-        // Create a record date (midnight of the day the data belongs to)
-        const recordDate = new Date(startDate);
-        recordDate.setHours(0, 0, 0, 0);
-        
-        // If we have historical data and this isn't today's record, skip it
-        if (hasHistoricalData && recordDate.getTime() < today.getTime()) {
-          console.log(`Skipping historical steps data for ${recordDate.toISOString().split('T')[0]}`);
-        } else {
-          // Check if we already have a record for this day
-          const existingRecord = await HealthData.findOne({
-            userId: new Types.ObjectId(userId),
-            dataType: 'steps',
-            date: recordDate
-          });
-          
-          if (!existingRecord) {
-            // Create new record
-            await HealthData.create({
-              userId: new Types.ObjectId(userId),
-              dataType: 'steps',
-              date: recordDate,
-              weekNumber: getWeekNumber(recordDate),
-              month: recordDate.getMonth(),
-              year: recordDate.getFullYear(),
-              stepsData: {
-                count,
-                startTime: startDate,
-                endTime: endDate,
-                dataSource: dataOrigins?.join(', ') || 'unknown'
-              },
-              lastSyncedAt: new Date(),
-              originalId: `steps_${userId}_${recordDate.toISOString().split('T')[0]}`
-            });
-            saved.steps = true;
-          } else {
-            // Update existing record
-            existingRecord.stepsData.count = count;
-            existingRecord.stepsData.startTime = startDate;
-            existingRecord.stepsData.endTime = endDate;
-            existingRecord.lastSyncedAt = new Date();
-            await existingRecord.save();
-            saved.steps = true;
-          }
-        }
+        await this.processStepsData(userId, healthData.steps);
+        saved.steps = true;
       }
 
-      // Save distance data if provided
+      // Process distance data
       if (healthData.distance) {
-        const { inMeters, inKilometers, startTime, endTime, dataOrigins } = healthData.distance;
-        const startDate = new Date(startTime);
-        const endDate = new Date(endTime);
-        
-        // Create a record date (midnight of the day the data belongs to)
-        const recordDate = new Date(startDate);
-        recordDate.setHours(0, 0, 0, 0);
-        
-        // If we have historical data and this isn't today's record, skip it
-        if (hasHistoricalData && recordDate.getTime() < today.getTime()) {
-          console.log(`Skipping historical distance data for ${recordDate.toISOString().split('T')[0]}`);
-        } else {
-          // Check if we already have a record for this day
-          const existingRecord = await HealthData.findOne({
-            userId: new Types.ObjectId(userId),
-            dataType: 'distance',
-            date: recordDate
-          });
-          
-          if (!existingRecord) {
-            // Create new record
-            await HealthData.create({
-              userId: new Types.ObjectId(userId),
-              dataType: 'distance',
-              date: recordDate,
-              weekNumber: getWeekNumber(recordDate),
-              month: recordDate.getMonth(),
-              year: recordDate.getFullYear(),
-              distanceData: {
-                distance: {
-                  inMeters,
-                  inKilometers
-                },
-                startTime: startDate,
-                endTime: endDate,
-                dataSource: dataOrigins?.join(', ') || 'unknown'
-              },
-              lastSyncedAt: new Date(),
-              originalId: `distance_${userId}_${recordDate.toISOString().split('T')[0]}`
-            });
-            saved.distance = true;
-          } else {
-            // Update existing record
-            if (existingRecord.distanceData && existingRecord.distanceData.distance) {
-              existingRecord.distanceData.distance.inMeters = inMeters;
-              existingRecord.distanceData.distance.inKilometers = inKilometers;
-              existingRecord.distanceData.startTime = startDate;
-              existingRecord.distanceData.endTime = endDate;
-              existingRecord.lastSyncedAt = new Date();
-              await existingRecord.save();
-              saved.distance = true;
-            }
-          }
-        }
+        await this.processDistanceData(userId, healthData.distance);
+        saved.distance = true;
       }
 
-      // Save sleep data if provided
+      // Process sleep data
       if (healthData.sleep) {
-        const { startTime, endTime, durationInSeconds, quality, stages, dataOrigins } = healthData.sleep;
-        const startDate = new Date(startTime);
-        const endDate = new Date(endTime);
-        
-        // Sleep sessions often span multiple days, so use the date when the sleep session ended
-        const recordDate = new Date(endDate);
-        recordDate.setHours(0, 0, 0, 0);
-        
-        // If we have historical data and this isn't today's record, skip it
-        if (hasHistoricalData && recordDate.getTime() < today.getTime()) {
-          console.log(`Skipping historical sleep data for ${recordDate.toISOString().split('T')[0]}`);
-        } else {
-          // Check if we already have a record for this sleep session (using same day and duration)
-          const existingRecord = await HealthData.findOne({
-            userId: new Types.ObjectId(userId),
-            dataType: 'sleep',
-            date: recordDate,
-            'sleepData.durationInSeconds': durationInSeconds
-          });
-          
-          if (!existingRecord) {
-            // Create new record
-            await HealthData.create({
-              userId: new Types.ObjectId(userId),
-              dataType: 'sleep',
-              date: recordDate,
-              weekNumber: getWeekNumber(recordDate),
-              month: recordDate.getMonth(),
-              year: recordDate.getFullYear(),
-              sleepData: {
-                startTime: startDate,
-                endTime: endDate,
-                durationInSeconds,
-                quality,
-                stages: stages?.map(stage => ({
-                  stageType: stage.stageType,
-                  startTime: new Date(stage.startTime),
-                  endTime: new Date(stage.endTime),
-                  durationInSeconds: stage.durationInSeconds
-                })),
-                dataSource: dataOrigins?.join(', ') || 'unknown'
-              },
-              lastSyncedAt: new Date(),
-              originalId: `sleep_${userId}_${recordDate.toISOString().split('T')[0]}_${durationInSeconds}`
-            });
-            saved.sleep = true;
-          } else {
-            // Sleep data doesn't typically change, so we don't need to update
-            saved.sleep = true;
-          }
-        }
+        await this.processSleepData(userId, healthData.sleep);
+        saved.sleep = true;
       }
 
-      // Save exercise data if provided
+      // Process exercise data
       if (healthData.exercise) {
-        try {
-          const { type, startTime, endTime, durationInSeconds, calories, distance, dataOrigins } = healthData.exercise;
-          const startDate = new Date(startTime);
-          const endDate = new Date(endTime);
-          
-          // Create a record date (midnight of the day the data belongs to)
-          const recordDate = new Date(startDate);
-          recordDate.setHours(0, 0, 0, 0);
-          
-          // If we have historical data and this isn't today's record, skip it
-          if (hasHistoricalData && recordDate.getTime() < today.getTime()) {
-            console.log(`Skipping historical exercise data for ${recordDate.toISOString().split('T')[0]}`);
-          } else {
-            // Check if we already have a record for this day and exercise type
-            const existingRecord = await HealthData.findOne({
-              userId: new Types.ObjectId(userId),
-              dataType: 'exercise',
-              date: recordDate,
-              // We can't query inside a JSON string, so we'll check based on date only
-            });
-            
-            // Create exercise data object
-            const exerciseDataObj = {
-              type,
-              startTime: startDate,
-              endTime: endDate,
-              durationInSeconds,
-              calories,
-              distance: distance ? {
-                inMeters: distance.inMeters,
-                inKilometers: distance.inKilometers
-              } : undefined,
-              dataSource: dataOrigins?.join(', ') || 'unknown'
-            };
-            
-            // Convert exercise data to string
-            const exerciseDataString = JSON.stringify(exerciseDataObj);
-            
-            if (!existingRecord) {
-              // Create new record
-              await HealthData.create({
-                userId: new Types.ObjectId(userId),
-                dataType: 'exercise',
-                date: recordDate,
-                weekNumber: getWeekNumber(recordDate),
-                month: recordDate.getMonth(),
-                year: recordDate.getFullYear(),
-                exerciseData: exerciseDataString,
-                lastSyncedAt: new Date(),
-                originalId: `exercise_${userId}_${type}_${recordDate.toISOString().split('T')[0]}`
-              });
-              saved.exercise = true;
-            } else {
-              // Update existing record
-              existingRecord.exerciseData = exerciseDataString;
-              existingRecord.lastSyncedAt = new Date();
-              await existingRecord.save();
-              saved.exercise = true;
-            }
-          }
-        } catch (error) {
-          console.error('Error saving exercise data:', error);
-          // Continue with other data types even if exercise fails
-        }
+        await this.processExerciseData(userId, healthData.exercise);
+        saved.exercise = true;
       }
 
       // Update the last health sync time for the user's devices
@@ -345,16 +134,328 @@ class HealthDataSyncService {
     }
   }
 
-  // The rest of the methods remain the same
-  // ...
+  /**
+   * Process steps data and save to the day-centric model
+   */
+  private async processStepsData(userId: string, stepsData: any): Promise<void> {
+    const { count, startTime, endTime, dataOrigins } = stepsData;
+    const startDate = new Date(startTime);
+    
+    // Create a record date (midnight of the day the data belongs to)
+    const recordDate = new Date(startDate);
+    recordDate.setHours(0, 0, 0, 0);
+
+    // Prepare steps data
+    const steps = {
+      count,
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      dataSource: dataOrigins?.join(', ') || 'unknown'
+    };
+
+    // Try to update existing document first
+    const result = await HealthData.findOneAndUpdate(
+      { 
+        userId: new Types.ObjectId(userId),
+        date: recordDate
+      },
+      {
+        $set: { 
+          steps,
+          'summary.totalSteps': count,
+          lastSyncedAt: new Date()
+        }
+      },
+      { new: true }
+    );
+
+    if (result) {
+      // Existing document was updated
+      if (!result.summary) {
+        // Initialize summary if it doesn't exist
+        await HealthData.updateOne(
+          { _id: result._id },
+          { 
+            $set: { 
+              summary: {
+                totalSteps: count,
+                totalDistanceMeters: result.distance?.inMeters || 0,
+                totalSleepSeconds: result.sleep?.durationInSeconds || 0,
+                totalExerciseSeconds: result.exercises?.reduce(
+                  (total: number, ex: Exercise) => total + ex.durationInSeconds, 0
+                ) || 0,
+                exerciseCount: result.exercises?.length || 0
+              }
+            }
+          }
+        );
+      }
+    } else {
+      // No existing document - create a new one
+      await HealthData.create({
+        userId: new Types.ObjectId(userId),
+        date: recordDate,
+        weekNumber: getWeekNumber(recordDate),
+        month: recordDate.getMonth(),
+        year: recordDate.getFullYear(),
+        steps,
+        exercises: [], // Initialize empty array
+        summary: {
+          totalSteps: count,
+          totalDistanceMeters: 0,
+          totalSleepSeconds: 0,
+          totalExerciseSeconds: 0,
+          exerciseCount: 0
+        },
+        lastSyncedAt: new Date()
+      });
+    }
+  }
 
   /**
-   * Get aggregated health data for a user
-   * @param userId User ID
-   * @param startDate Start date for the query
-   * @param endDate End date for the query
-   * @param aggregateBy How to aggregate the data (daily, weekly, monthly)
-   * @returns Aggregated health data
+   * Process distance data and save to the day-centric model
+   */
+  private async processDistanceData(userId: string, distanceData: any): Promise<void> {
+    const { inMeters, inKilometers, startTime, endTime, dataOrigins } = distanceData;
+    const startDate = new Date(startTime);
+    
+    // Create a record date (midnight of the day the data belongs to)
+    const recordDate = new Date(startDate);
+    recordDate.setHours(0, 0, 0, 0);
+
+    // Prepare distance data
+    const distance = {
+      inMeters,
+      inKilometers,
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      dataSource: dataOrigins?.join(', ') || 'unknown'
+    };
+
+    // Try to update existing document first
+    const result = await HealthData.findOneAndUpdate(
+      { 
+        userId: new Types.ObjectId(userId),
+        date: recordDate
+      },
+      {
+        $set: { 
+          distance,
+          'summary.totalDistanceMeters': inMeters,
+          lastSyncedAt: new Date()
+        }
+      },
+      { new: true }
+    );
+
+    if (result) {
+      // Existing document was updated
+      if (!result.summary) {
+        // Initialize summary if it doesn't exist
+        await HealthData.updateOne(
+          { _id: result._id },
+          { 
+            $set: { 
+              summary: {
+                totalSteps: result.steps?.count || 0,
+                totalDistanceMeters: inMeters,
+                totalSleepSeconds: result.sleep?.durationInSeconds || 0,
+                totalExerciseSeconds: result.exercises?.reduce(
+                  (total: number, ex: Exercise) => total + ex.durationInSeconds, 0
+                ) || 0,
+                exerciseCount: result.exercises?.length || 0
+              }
+            }
+          }
+        );
+      }
+    } else {
+      // No existing document - create a new one
+      await HealthData.create({
+        userId: new Types.ObjectId(userId),
+        date: recordDate,
+        weekNumber: getWeekNumber(recordDate),
+        month: recordDate.getMonth(),
+        year: recordDate.getFullYear(),
+        distance,
+        exercises: [], // Initialize empty array
+        summary: {
+          totalSteps: 0,
+          totalDistanceMeters: inMeters,
+          totalSleepSeconds: 0,
+          totalExerciseSeconds: 0,
+          exerciseCount: 0
+        },
+        lastSyncedAt: new Date()
+      });
+    }
+  }
+
+  /**
+   * Process sleep data and save to the day-centric model
+   */
+  private async processSleepData(userId: string, sleepData: any): Promise<void> {
+    const { startTime, endTime, durationInSeconds, quality, stages, dataOrigins } = sleepData;
+    
+    // Sleep should be attributed to the day the person woke up (end time)
+    const endDate = new Date(endTime);
+    const recordDate = new Date(endDate);
+    recordDate.setHours(0, 0, 0, 0);
+
+    // Prepare sleep data
+    const sleep = {
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      durationInSeconds,
+      quality,
+      stages: stages?.map((stage: any) => ({
+        stageType: stage.stageType,
+        startTime: new Date(stage.startTime),
+        endTime: new Date(stage.endTime),
+        durationInSeconds: stage.durationInSeconds
+      })),
+      dataSource: dataOrigins?.join(', ') || 'unknown'
+    };
+
+    // Try to update existing document first
+    const result = await HealthData.findOneAndUpdate(
+      { 
+        userId: new Types.ObjectId(userId),
+        date: recordDate
+      },
+      {
+        $set: { 
+          sleep,
+          'summary.totalSleepSeconds': durationInSeconds,
+          lastSyncedAt: new Date()
+        }
+      },
+      { new: true }
+    );
+
+    if (result) {
+      // Existing document was updated
+      if (!result.summary) {
+        // Initialize summary if it doesn't exist
+        await HealthData.updateOne(
+          { _id: result._id },
+          { 
+            $set: { 
+              summary: {
+                totalSteps: result.steps?.count || 0,
+                totalDistanceMeters: result.distance?.inMeters || 0,
+                totalSleepSeconds: durationInSeconds,
+                totalExerciseSeconds: result.exercises?.reduce(
+                  (total: number, ex: Exercise) => total + ex.durationInSeconds, 0
+                ) || 0,
+                exerciseCount: result.exercises?.length || 0
+              }
+            }
+          }
+        );
+      }
+    } else {
+      // No existing document - create a new one
+      await HealthData.create({
+        userId: new Types.ObjectId(userId),
+        date: recordDate,
+        weekNumber: getWeekNumber(recordDate),
+        month: recordDate.getMonth(),
+        year: recordDate.getFullYear(),
+        sleep,
+        exercises: [], // Initialize empty array
+        summary: {
+          totalSteps: 0,
+          totalDistanceMeters: 0,
+          totalSleepSeconds: durationInSeconds,
+          totalExerciseSeconds: 0,
+          exerciseCount: 0
+        },
+        lastSyncedAt: new Date()
+      });
+    }
+  }
+
+  /**
+   * Process exercise data and save to the day-centric model
+   */
+  private async processExerciseData(userId: string, exerciseData: any): Promise<void> {
+    const { type, startTime, endTime, durationInSeconds, calories, distance, dataOrigins } = exerciseData;
+    
+    // Exercise is attributed to the day it started
+    const startDate = new Date(startTime);
+    const recordDate = new Date(startDate);
+    recordDate.setHours(0, 0, 0, 0);
+
+    // Prepare exercise data object
+    const exerciseObj: Exercise = {
+      type,
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      durationInSeconds,
+      calories,
+      distance,
+      dataSource: dataOrigins?.join(', ') || 'unknown'
+    };
+
+    // Find the document for this day
+    const dailyRecord = await HealthData.findOne({
+      userId: new Types.ObjectId(userId),
+      date: recordDate
+    });
+
+    if (dailyRecord) {
+      // Check if this exercise already exists (by start time)
+      const existingExerciseIndex = dailyRecord.exercises.findIndex((ex: Exercise) => 
+        ex.startTime.getTime() === new Date(startTime).getTime()
+      );
+
+      if (existingExerciseIndex >= 0) {
+        // Update existing exercise
+        dailyRecord.exercises[existingExerciseIndex] = exerciseObj;
+      } else {
+        // Add new exercise
+        dailyRecord.exercises.push(exerciseObj);
+      }
+
+      // Update summary
+      if (!dailyRecord.summary) {
+        dailyRecord.summary = {};
+      }
+      
+      // Calculate total exercise seconds and count
+      const totalExerciseSeconds = dailyRecord.exercises.reduce(
+        (total: number, ex: Exercise) => total + ex.durationInSeconds, 0
+      );
+      
+      dailyRecord.summary.totalExerciseSeconds = totalExerciseSeconds;
+      dailyRecord.summary.exerciseCount = dailyRecord.exercises.length;
+      dailyRecord.lastSyncedAt = new Date();
+      
+      await dailyRecord.save();
+    } else {
+      // Create new record with the exercise
+      await HealthData.create({
+        userId: new Types.ObjectId(userId),
+        date: recordDate,
+        weekNumber: getWeekNumber(recordDate),
+        month: recordDate.getMonth(),
+        year: recordDate.getFullYear(),
+        exercises: [exerciseObj],
+        summary: {
+          totalSteps: 0,
+          totalDistanceMeters: 0,
+          totalSleepSeconds: 0,
+          totalExerciseSeconds: durationInSeconds,
+          exerciseCount: 1
+        },
+        lastSyncedAt: new Date()
+      });
+    }
+  }
+
+  /**
+   * Get aggregated health data for a time range
    */
   async getAggregatedHealthData(
     userId: string,
@@ -363,12 +464,11 @@ class HealthDataSyncService {
     aggregateBy: 'daily' | 'weekly' | 'monthly' = 'daily'
   ) {
     try {
-      // Convert string dates to Date objects if needed
-      const start = startDate instanceof Date ? startDate : new Date(startDate);
-      const end = endDate instanceof Date ? endDate : new Date(endDate);
-      
       // Format dates to midnight to ensure complete day coverage
+      const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
+      
+      const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       
       // Base match condition for the query
@@ -398,90 +498,38 @@ class HealthDataSyncService {
         };
       }
       
-      // Perform aggregation for steps
-      const stepsAggregation = await HealthData.aggregate([
-        { $match: { ...matchStage, dataType: 'steps' } },
+      // Get aggregated data - now using day-centric model
+      const aggregatedData = await HealthData.aggregate([
+        { $match: matchStage },
         { 
           $group: {
             _id: groupId,
-            totalSteps: { $sum: '$stepsData.count' },
-            date: { $min: '$date' }, // Get the earliest date in the group for reference
-            dataPoints: { $count: {} }
+            totalSteps: { $sum: '$summary.totalSteps' },
+            totalDistanceMeters: { $sum: '$summary.totalDistanceMeters' },
+            totalSleepSeconds: { $sum: '$summary.totalSleepSeconds' },
+            totalExerciseSeconds: { $sum: '$summary.totalExerciseSeconds' },
+            totalExerciseCount: { $sum: '$summary.exerciseCount' },
+            days: { $count: {} },
+            firstDate: { $min: '$date' },
+            lastDate: { $max: '$date' }
           }
         },
-        { $sort: { date: 1 } }
-      ]);
-      
-      // Perform aggregation for distance
-      const distanceAggregation = await HealthData.aggregate([
-        { $match: { ...matchStage, dataType: 'distance' } },
-        { 
-          $group: {
-            _id: groupId,
-            totalDistanceMeters: { $sum: '$distanceData.distance.inMeters' },
-            date: { $min: '$date' },
-            dataPoints: { $count: {} }
-          }
-        },
-        { $sort: { date: 1 } }
-      ]);
-      
-      // Perform aggregation for sleep
-      // For sleep we want average duration and latest record per period
-      const sleepAggregation = await HealthData.aggregate([
-        { $match: { ...matchStage, dataType: 'sleep' } },
-        { 
-          $group: {
-            _id: groupId,
-            avgSleepDurationSeconds: { $avg: '$sleepData.durationInSeconds' },
-            totalSleepDurationSeconds: { $sum: '$sleepData.durationInSeconds' },
-            date: { $min: '$date' },
-            dataPoints: { $count: {} }
-          }
-        },
-        { $sort: { date: 1 } }
-      ]);
-      
-      // For exercise data, we need to use a simpler approach since it's stored as a string
-      // We'll just count the entries for now
-      const exerciseAggregation = await HealthData.aggregate([
-        { $match: { ...matchStage, dataType: 'exercise' } },
-        { 
-          $group: {
-            _id: groupId,
-            count: { $sum: 1 },
-            date: { $min: '$date' }
-          }
-        },
-        { $sort: { date: 1 } }
+        { $sort: { firstDate: 1 } }
       ]);
       
       // Format the results based on aggregation type
       return {
-        steps: stepsAggregation.map(item => ({
+        aggregateBy,
+        data: aggregatedData.map(item => ({
           period: this.formatPeriod(item._id, aggregateBy),
-          totalSteps: item.totalSteps,
-          dataPoints: item.dataPoints,
-          date: item.date
-        })),
-        distance: distanceAggregation.map(item => ({
-          period: this.formatPeriod(item._id, aggregateBy),
-          totalDistanceMeters: item.totalDistanceMeters,
-          totalDistanceKilometers: Math.round(item.totalDistanceMeters / 10) / 100, // Convert to km with 2 decimal places
-          dataPoints: item.dataPoints,
-          date: item.date
-        })),
-        sleep: sleepAggregation.map(item => ({
-          period: this.formatPeriod(item._id, aggregateBy),
-          avgSleepDurationHours: Math.round((item.avgSleepDurationSeconds / 3600) * 10) / 10, // Round to 1 decimal place
-          totalSleepDurationHours: Math.round((item.totalSleepDurationSeconds / 3600) * 10) / 10,
-          dataPoints: item.dataPoints,
-          date: item.date
-        })),
-        exercise: exerciseAggregation.map(item => ({
-          period: this.formatPeriod(item._id, aggregateBy),
-          count: item.count,
-          date: item.date
+          totalSteps: item.totalSteps || 0,
+          totalDistanceKm: (item.totalDistanceMeters / 1000) || 0,
+          totalSleepHours: (item.totalSleepSeconds / 3600) || 0,
+          totalExerciseMinutes: (item.totalExerciseSeconds / 60) || 0,
+          exerciseCount: item.totalExerciseCount || 0,
+          days: item.days,
+          startDate: item.firstDate,
+          endDate: item.lastDate
         }))
       };
     } catch (error) {
@@ -505,8 +553,6 @@ class HealthDataSyncService {
 
   /**
    * Get the timestamp of the last sync for a user
-   * @param userId User ID
-   * @returns Last sync timestamp or null if no sync has occurred
    */
   async getLastSyncTime(userId: string): Promise<Date | null> {
     try {

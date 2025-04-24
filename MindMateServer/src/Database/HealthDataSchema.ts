@@ -1,67 +1,69 @@
-// server/Database/HealthDataSchema.ts
+// Updated HealthDataSchema.ts
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-// Interfaces for health data types
-export interface IStepsData {
-  count: number;
-  startTime: Date;
-  endTime: Date;
-  dataSource?: string;
-}
-
-export interface IDistanceData {
-  distance: {
-    inMeters: number;
-    inKilometers: number;
-  };
-  startTime: Date;
-  endTime: Date;
-  dataSource?: string;
-}
-
-export interface ISleepData {
-  startTime: Date;
-  endTime: Date;
-  durationInSeconds: number;
-  quality?: 'poor' | 'fair' | 'good';
-  stages?: Array<{
-    stageType: string;
+// Main DailyHealthData interface - day-centric approach
+export interface IHealthData extends Document {
+  userId: Types.ObjectId;
+  date: Date;  // The day this data applies to (midnight of the day)
+  weekNumber: number;
+  month: number;
+  year: number;
+  
+  // Health metrics - all optional since a day might have any combination
+  steps?: {
+    count: number;
     startTime: Date;
     endTime: Date;
-    durationInSeconds: number;
-  }>;
-  dataSource?: string;
-}
-
-export interface IExerciseData {
-  type: string;
-  startTime: Date;
-  endTime: Date;
-  durationInSeconds: number;
-  calories?: number;
+    dataSource?: string;
+  };
+  
   distance?: {
     inMeters: number;
     inKilometers: number;
+    startTime: Date;
+    endTime: Date;
+    dataSource?: string;
   };
-  dataSource?: string;
-}
-
-// Main HealthData interface
-export interface IHealthData extends Document {
-  userId: Types.ObjectId;
-  dataType: 'steps' | 'distance' | 'sleep' | 'exercise';
-  date: Date; // The day this data applies to (for easier querying by day)
-  weekNumber: number; // ISO week number (for easier weekly aggregation)
-  month: number; // Month number 0-11 (for easier monthly aggregation)
-  year: number; // Year (for easier yearly aggregation)
-  stepsData?: IStepsData;
-  distanceData?: IDistanceData;
-  sleepData?: ISleepData;
-  exerciseData?: IExerciseData;
+  
+  sleep?: {
+    startTime: Date;
+    endTime: Date;
+    durationInSeconds: number;
+    quality?: 'poor' | 'fair' | 'good';
+    stages?: Array<{
+      stageType: string;
+      startTime: Date;
+      endTime: Date;
+      durationInSeconds: number;
+    }>;
+    dataSource?: string;
+  };
+  
+  exercises: Array<{
+    type: string;
+    startTime: Date;
+    endTime: Date;
+    durationInSeconds: number;
+    calories?: number;
+    distance?: {
+      inMeters: number;
+      inKilometers: number;
+    };
+    dataSource?: string;
+  }>;
+  
+  // Summary statistics for quick access
+  summary: {
+    totalSteps?: number;
+    totalDistanceMeters?: number;
+    totalSleepSeconds?: number;
+    totalExerciseSeconds?: number;
+    exerciseCount?: number;
+  };
+  
   lastSyncedAt: Date;
   createdAt: Date;
   updatedAt: Date;
-  originalId?: string; // ID from Health Connect for deduplication
 }
 
 // Create the schema
@@ -70,12 +72,6 @@ const healthDataSchema = new Schema<IHealthData>(
     userId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      index: true,
-    },
-    dataType: {
-      type: String,
-      enum: ['steps', 'distance', 'sleep', 'exercise'],
       required: true,
       index: true,
     },
@@ -99,22 +95,20 @@ const healthDataSchema = new Schema<IHealthData>(
       required: true,
       index: true,
     },
-    stepsData: {
+    steps: {
       count: Number,
       startTime: Date,
       endTime: Date,
       dataSource: String,
     },
-    distanceData: {
-      distance: {
-        inMeters: Number,
-        inKilometers: Number,
-      },
+    distance: {
+      inMeters: Number,
+      inKilometers: Number,
       startTime: Date,
       endTime: Date,
       dataSource: String,
     },
-    sleepData: {
+    sleep: {
       startTime: Date,
       endTime: Date,
       durationInSeconds: Number,
@@ -132,7 +126,7 @@ const healthDataSchema = new Schema<IHealthData>(
       ],
       dataSource: String,
     },
-    exerciseData: {
+    exercises: [{
       type: String,
       startTime: Date,
       endTime: Date,
@@ -143,15 +137,17 @@ const healthDataSchema = new Schema<IHealthData>(
         inKilometers: Number,
       },
       dataSource: String,
+    }],
+    summary: {
+      totalSteps: Number,
+      totalDistanceMeters: Number,
+      totalSleepSeconds: Number,
+      totalExerciseSeconds: Number,
+      exerciseCount: Number,
     },
     lastSyncedAt: {
       type: Date,
       default: Date.now,
-    },
-    originalId: {
-      type: String,
-      sparse: true,
-      index: true,
     },
   },
   {
@@ -159,26 +155,13 @@ const healthDataSchema = new Schema<IHealthData>(
   }
 );
 
-// Create indexes for efficient querying
-healthDataSchema.index({ userId: 1, dataType: 1, date: 1 });
-healthDataSchema.index({ userId: 1, date: 1 });
+// Create optimized indexes
+healthDataSchema.index({ userId: 1, date: 1 }, { unique: true });
 healthDataSchema.index({ userId: 1, weekNumber: 1, year: 1 });
 healthDataSchema.index({ userId: 1, month: 1, year: 1 });
 healthDataSchema.index({ userId: 1, year: 1 });
+healthDataSchema.index({ userId: 1, 'exercises.type': 1 });
 
-// Helper method to get ISO week number
-healthDataSchema.pre('save', function (next) {
-  const date = this.date;
-  // Calculate ISO week number
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  this.weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  this.month = date.getMonth();
-  this.year = date.getFullYear();
-  next();
-});
-
-// Create model
-export const HealthData = mongoose.models.HealthData || mongoose.model<IHealthData>('HealthData', healthDataSchema);
+// Create model (keeping the same name)
+export const HealthData = mongoose.models.HealthData || 
+                          mongoose.model<IHealthData>('HealthData', healthDataSchema);
