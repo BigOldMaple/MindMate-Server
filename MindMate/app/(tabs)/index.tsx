@@ -11,6 +11,8 @@ import { notificationsApi } from '@/services/notificationsApi';
 import * as SecureStore from 'expo-secure-store';
 import SyncHealthDataButton from '@/components/SyncHealthDataButton';
 import TriggerAnalysisButton from '@/components/TriggerAnalysisButton';
+import ClearAnalysisButton from '@/components/ClearAnalysisButton';
+
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);
@@ -21,7 +23,7 @@ export default function HomeScreen() {
     canCheckIn: boolean;
     nextCheckInTime?: Date;
   }>({ canCheckIn: true });
-  
+
   // Use refs to track previous check-in status reliably across renders
   const prevCheckInStatusRef = useRef<boolean>(true);
 
@@ -62,25 +64,25 @@ export default function HomeScreen() {
       notificationCreated?: boolean;
       notificationId?: string;
     }
-  
+
     const loadCheckInStatus = async () => {
       try {
         const status = await checkInApi.getCheckInStatus();
-  
+
         // Update state
         setCheckInStatus(status);
-  
+
         // Detect transitions from cooldown to available
         const wasInCooldown = !prevCheckInStatusRef.current;
         const isNowAvailable = status.canCheckIn;
-  
+
         // If transitioning from cooldown to available, send a local notification
         if (wasInCooldown && isNowAvailable) {
           console.log('Check-in is now available after cooldown');
-          
+
           // Import the notificationTracker
           const { notificationTracker } = require('../../services/notificationTracker');
-          
+
           // Only show notification if we haven't already shown one for this cycle
           const hasShown = await notificationTracker.hasShownCheckInNotification();
           if (!hasShown) {
@@ -88,20 +90,20 @@ export default function HomeScreen() {
             await notificationService.sendLocalNotification(
               'Check-In Available',
               'Your next check-in is now available. How are you feeling today?',
-              { 
+              {
                 type: 'wellness',
                 actionable: true,
                 actionRoute: '/home/check_in'
               }
             );
-            
+
             // Mark that we've shown a notification for this cycle
             await notificationTracker.markCheckInNotificationShown();
           }
-          
+
           // Set flag to refresh notifications
           await SecureStore.setItemAsync('shouldRefreshNotifications', 'true');
-          
+
           // Fetch notifications to update the badge count
           try {
             await notificationsApi.getNotifications();
@@ -109,23 +111,23 @@ export default function HomeScreen() {
             console.error('Error refreshing notifications:', error);
           }
         }
-  
+
         // Update the previous status ref for next comparison
         prevCheckInStatusRef.current = status.canCheckIn;
       } catch (error) {
         console.error('Error loading check-in status:', error);
       }
     };
-  
+
     // Load initial status
     loadCheckInStatus();
-  
+
     // Use a shorter interval of 15 seconds to be more responsive about status changes
     const interval = setInterval(loadCheckInStatus, 15000);
-  
+
     return () => clearInterval(interval);
   }, []);
-  
+
   // Add this additional effect to check notifications on app focus
   // But now with a cooldown to prevent duplicate notifications
   useEffect(() => {
@@ -133,7 +135,7 @@ export default function HomeScreen() {
       try {
         // Import the notificationTracker
         const { notificationTracker } = require('../../services/notificationTracker');
-        
+
         // Only check for notification status if we haven't shown one recently
         const hasShown = await notificationTracker.hasShownCheckInNotification();
         if (!hasShown) {
@@ -147,16 +149,16 @@ export default function HomeScreen() {
         console.error('Error checking notifications on focus:', error);
       }
     };
-  
+
     // Initial check
     checkNotifications();
-  
+
     // Set up an interval to check every 5 minutes
     const interval = setInterval(checkNotifications, 5 * 60 * 1000);
-  
+
     return () => clearInterval(interval);
   }, []);
-  
+
   // Add this additional effect to check notifications on app focus
   useEffect(() => {
     const checkNotifications = async () => {
@@ -170,13 +172,13 @@ export default function HomeScreen() {
         console.error('Error checking notifications on focus:', error);
       }
     };
-  
+
     // Initial check
     checkNotifications();
-  
+
     // Set up an interval to check every 5 minutes
     const interval = setInterval(checkNotifications, 5 * 60 * 1000);
-  
+
     return () => clearInterval(interval);
   }, []);
 
@@ -266,9 +268,12 @@ export default function HomeScreen() {
 
       {/* Health Data Sync Button */}
       <SyncHealthDataButton />
-      
+
       {/* Mental Health Analysis Button (Dev Only) */}
       <TriggerAnalysisButton />
+
+      {/* Clear Mental Health Data Button (Dev Only) */}
+      <ClearAnalysisButton />
 
       {/* Support Network Card */}
       <View style={styles.networkCard}>

@@ -322,4 +322,24 @@ router.post('/admin/run-daily-analysis', authenticateToken, async (req: any, res
   }
 });
 
+// Admin route to clear all mental health assessments for a user (dev only)
+router.post('/admin/clear-assessments', authenticateToken, async (req: any, res) => {
+    try {
+      // In a real app, add admin role check here
+      
+      // Delete all mental health assessments for this user
+      const result = await MentalHealthState.deleteMany({
+        userId: new Types.ObjectId(req.userId)
+      });
+      
+      res.json({ 
+        message: `Cleared ${result.deletedCount} mental health assessments`,
+        count: result.deletedCount
+      });
+    } catch (error) {
+      console.error('Clear assessments error:', error);
+      res.status(500).json({ error: 'Failed to clear mental health assessments' });
+    }
+  });
+
 export default router;
