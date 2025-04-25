@@ -1,0 +1,325 @@
+// server/routes/mentalHealth.ts
+import express from 'express';
+import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
+import { llmAnalysisService } from '../services/llmAnalysisService';
+import { auth } from '../services/auth';
+import { ApiError } from '../middleware/error';
+import { Types } from 'mongoose';
+
+const router = express.Router();
+
+// Middleware to verify JWT token
+const authenticateToken = async (req: any, res: any, next: any) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = auth.verifyToken(token);
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    console.error('Auth error:', error);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// Get the latest mental health assessment
+router.get('/assessment', authenticateToken, async (req: any, res) => {
+  try {
+    // Use find with sort and limit instead of the static method
+    const assessment = await MentalHealthState.findOne({ 
+      userId: new Types.ObjectId(req.userId) 
+    })
+    .sort({ timestamp: -1 })
+    .limit(1);
+    
+    if (!assessment) {
+      return res.status(404).json({ 
+        error: 'No mental health assessment found',
+        message: 'Your first assessment will be created soon. Please continue providing health data through check-ins and connected devices.'
+      });
+    }
+    
+    res.json(assessment);
+  } catch (error) {
+    console.error('Get assessment error:', error);
+    res.status(500).json({ error: 'Failed to fetch mental health assessment' });
+  }
+});
+
+// Trigger a new mental health assessment
+router.post('/assess', authenticateToken, async (req: any, res) => {
+  try {
+    // Trigger the LLM analysis
+    const analysisResult = await llmAnalysisService.analyzeMentalHealth(req.userId);
+    
+    // Format response to include key reasoning data
+    const response = {
+      message: 'Mental health assessment completed',
+      status: analysisResult.mentalHealthStatus,
+      needsSupport: analysisResult.needsSupport,
+      confidenceScore: analysisResult.confidenceScore,
+      reasoning: {
+        sleepQuality: analysisResult.reasoningData.sleepQuality,
+        activityLevel: analysisResult.reasoningData.activityLevel,
+        averageMood: analysisResult.reasoningData.checkInMood,
+        significantChanges: analysisResult.reasoningData.significantChanges
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Assessment error:', error);
+    res.status(500).json({ error: 'Failed to complete mental health assessment' });
+  }
+});
+
+// Get assessment history
+router.get('/history', authenticateToken, async (req: any, res) => {
+  try {
+    const { limit = 10, includeSupportDetails = false } = req.query;
+    
+    // Build the query projection
+    let projection: any = {
+      timestamp: 1,
+      mentalHealthStatus: 1,
+      confidenceScore: 1,
+      needsSupport: 1,
+      'reasoningData.sleepQuality': 1,
+      'reasoningData.activityLevel': 1,
+      'reasoningData.checkInMood': 1,
+      'reasoningData.significantChanges': 1
+    };
+    
+    if (includeSupportDetails === 'true') {
+      projection = {
+        ...projection,
+        supportRequestStatus: 1,
+        supportRequestTime: 1,
+        supportProvidedBy: 1,
+        supportProvidedTime: 1
+      };
+    }
+    
+    const assessments = await MentalHealthState.find({
+      userId: new Types.ObjectId(req.userId)
+    })
+      .select(projection)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit as string))
+      .lean();
+    
+    res.json(assessments);
+  } catch (error) {
+    console.error('Get assessment history error:', error);
+    res.status(500).json({ error: 'Failed to fetch assessment history' });
+  }
+});
+
+// Get assessment statistics
+router.get('/stats', authenticateToken, async (req: any, res) => {
+  try {
+    const { days = 30 } = req.query;
+    
+    // Calculate the start date
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days as string));
+    
+    // Get assessments for the period
+    const assessments = await MentalHealthState.find({
+      userId: new Types.ObjectId(req.userId),
+      timestamp: { $gte: startDate }
+    }).sort({ timestamp: 1 });
+    
+    // Calculate statistics
+    const statusCounts: Record<string, number> = {
+      stable: 0,
+      declining: 0,
+      critical: 0
+    };
+    
+    const sleepQualityCounts: Record<string, number> = {
+      poor: 0,
+      fair: 0,
+      good: 0
+    };
+    
+    const activityLevelCounts: Record<string, number> = {
+      low: 0,
+      moderate: 0,
+      high: 0
+    };
+    
+    let totalConfidence = 0;
+    let totalMood = 0;
+    let moodCount = 0;
+    
+    assessments.forEach(assessment => {
+      // Count statuses
+      const status = assessment.mentalHealthStatus;
+      if (status && (status === 'stable' || status === 'declining' || status === 'critical')) {
+        statusCounts[status]++;
+      }
+      
+      // Count sleep qualities
+      const sleepQuality = assessment.reasoningData?.sleepQuality;
+      if (sleepQuality && (sleepQuality === 'poor' || sleepQuality === 'fair' || sleepQuality === 'good')) {
+        sleepQualityCounts[sleepQuality]++;
+      }
+      
+      // Count activity levels
+      const activityLevel = assessment.reasoningData?.activityLevel;
+      if (activityLevel && (activityLevel === 'low' || activityLevel === 'moderate' || activityLevel === 'high')) {
+        activityLevelCounts[activityLevel]++;
+      }
+      
+      // Sum confidence scores
+      totalConfidence += assessment.confidenceScore;
+      
+      // Sum mood scores
+      if (assessment.reasoningData?.checkInMood) {
+        totalMood += assessment.reasoningData.checkInMood;
+        moodCount++;
+      }
+    });
+    
+    // Prepare trends data (last 10 assessments)
+    const trendData = assessments.slice(-10).map(assessment => ({
+      date: assessment.timestamp,
+      status: assessment.mentalHealthStatus,
+      confidence: assessment.confidenceScore,
+      mood: assessment.reasoningData?.checkInMood
+    }));
+    
+    // Prepare response
+    const stats = {
+      totalAssessments: assessments.length,
+      statusDistribution: statusCounts,
+      sleepQualityDistribution: sleepQualityCounts,
+      activityLevelDistribution: activityLevelCounts,
+      averageConfidence: assessments.length > 0 ? totalConfidence / assessments.length : 0,
+      averageMood: moodCount > 0 ? totalMood / moodCount : 0,
+      trends: trendData,
+      period: {
+        days: parseInt(days as string),
+        startDate,
+        endDate: new Date()
+      }
+    };
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('Get assessment stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch assessment statistics' });
+  }
+});
+
+// Update support status (e.g., when a buddy peer provides support)
+router.post('/support/:assessmentId', authenticateToken, async (req: any, res) => {
+  try {
+    const { assessmentId } = req.params;
+    
+    // Find the assessment
+    const assessment = await MentalHealthState.findById(assessmentId);
+    
+    if (!assessment) {
+      throw new ApiError(404, 'Assessment not found');
+    }
+    
+    // Verify that the logged-in user is a buddy peer of the assessment user
+    // (This would need a helper function to check buddy peer relationships)
+    // For now, we'll skip this check for simplicity
+    
+    // Update the support status
+    assessment.supportRequestStatus = 'supportProvided';
+    assessment.supportProvidedBy = new Types.ObjectId(req.userId);
+    assessment.supportProvidedTime = new Date();
+    await assessment.save();
+    
+    res.json({
+      message: 'Support marked as provided',
+      assessment
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      console.error('Update support status error:', error);
+      res.status(500).json({ error: 'Failed to update support status' });
+    }
+  }
+});
+
+// Get users needing support (for buddies)
+router.get('/buddy-support-requests', authenticateToken, async (req: any, res) => {
+  try {
+    const { User } = require('../Database/Schema');
+    
+    // Get the current user's data
+    const currentUser = await User.findById(req.userId);
+    
+    if (!currentUser) {
+      throw new ApiError(404, 'User not found');
+    }
+    
+    // Get IDs of users for whom the current user is a buddy
+    const buddyUserIds = currentUser.buddyPeers.map((buddy: any) => buddy.userId);
+    
+    // Find assessments where those users need support
+    const supportRequests = await MentalHealthState.find({
+      userId: { $in: buddyUserIds },
+      needsSupport: true,
+      supportRequestStatus: 'buddyRequested'
+    })
+      .populate('userId', 'username profile.name')
+      .sort({ supportRequestTime: 1 })
+      .lean();
+    
+    res.json(supportRequests);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      console.error('Get support requests error:', error);
+      res.status(500).json({ error: 'Failed to fetch support requests' });
+    }
+  }
+});
+
+// Admin route to trigger baseline establishment for a user
+router.post('/admin/establish-baseline/:userId', authenticateToken, async (req: any, res) => {
+  try {
+    // In a real app, add admin role check here
+    
+    const { userId } = req.params;
+    await llmAnalysisService.establishBaseline(userId);
+    
+    res.json({ message: 'Baseline establishment triggered' });
+  } catch (error) {
+    console.error('Establish baseline error:', error);
+    res.status(500).json({ error: 'Failed to establish baseline' });
+  }
+});
+
+// Admin route to trigger daily analysis
+router.post('/admin/run-daily-analysis', authenticateToken, async (req: any, res) => {
+  try {
+    // In a real app, add admin role check here
+    
+    // Start the analysis in the background
+    llmAnalysisService.scheduleDailyAnalysis().catch(error => {
+      console.error('Error in scheduled analysis:', error);
+    });
+    
+    res.json({ message: 'Daily analysis started' });
+  } catch (error) {
+    console.error('Run daily analysis error:', error);
+    res.status(500).json({ error: 'Failed to run daily analysis' });
+  }
+});
+
+export default router;

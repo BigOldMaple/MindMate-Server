@@ -14,6 +14,7 @@ import checkInRoutes from './routes/checkIn';
 import notificationsRoutes from './routes/notifications';
 import configRoutes from './routes/config';
 import healthDataRoutes from './routes/healthData';
+import mentalHealthRoutes from './routes/mentalHealth';
 import { ngrokService } from './services/ngrokService';
 
 // Define a variable for the health sync task manager
@@ -87,6 +88,7 @@ app.use('/api/check-in', checkInRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/health-data', healthDataRoutes);
+app.use('/api/mental-health', mentalHealthRoutes);
 
 // Health check route
 app.get('/health', (_req, res) => {
@@ -162,6 +164,19 @@ const startServer = async () => {
                 console.log('------------------------------------------');
                 console.log(`const NGROK_URL: string | null = '${ngrokInfo.url}';`);
                 console.log('------------------------------------------\n');
+            }
+            
+            // Initialize LLM analysis service
+            try {
+                console.log('\nLLM Analysis Service:');
+                console.log('---------------------------');
+                console.log('Initializing LLM analysis service');
+                console.log('Model: Gemma 3 1B (via Ollama)');
+                console.log('Endpoint: http://localhost:11434/api/generate');
+                console.log('Mental health assessment available at /api/mental-health/assess');
+                console.log('---------------------------\n');
+            } catch (error) {
+                console.error('Failed to initialize LLM analysis service:', error);
             }
             
             // Initialize health sync task manager

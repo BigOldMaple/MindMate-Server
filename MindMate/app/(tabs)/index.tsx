@@ -10,6 +10,7 @@ import { notificationService } from '@/services/notificationService';
 import { notificationsApi } from '@/services/notificationsApi';
 import * as SecureStore from 'expo-secure-store';
 import SyncHealthDataButton from '@/components/SyncHealthDataButton';
+import TriggerAnalysisButton from '@/components/TriggerAnalysisButton';
 
 export default function HomeScreen() {
   const [buddyPeers, setBuddyPeers] = useState<BuddyPeer[]>([]);
@@ -265,6 +266,9 @@ export default function HomeScreen() {
 
       {/* Health Data Sync Button */}
       <SyncHealthDataButton />
+      
+      {/* Mental Health Analysis Button (Dev Only) */}
+      <TriggerAnalysisButton />
 
       {/* Support Network Card */}
       <View style={styles.networkCard}>
