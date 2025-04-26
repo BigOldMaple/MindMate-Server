@@ -5,6 +5,7 @@ import { HealthData } from '../Database/HealthDataSchema';
 import { CheckIn } from '../Database/CheckInSchema';
 import { User } from '../Database/Schema';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
+import { peerSupportService } from './peerSupportService';
 
 interface LLMResponse {
     mentalHealthStatus: 'stable' | 'declining' | 'critical';
@@ -45,7 +46,7 @@ class LLMAnalysisService {
                 prompt,
                 stream: false,
                 options: {
-                    temperature: 0.2, // Lower temperature for more deterministic outputs
+                    temperature: 0.15, // Lower temperature for more deterministic outputs
                     top_p: 0.9
                 }
             });
@@ -380,6 +381,13 @@ class LLMAnalysisService {
         let prompt = `
 You are a mental health assessment AI specialized in analyzing health data metrics. You have been provided with ${days} days of health and mood data from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
 
+IMPORTANT NOTE ABOUT MISSING DATA:
+- Missing data points should NOT be interpreted as negative health indicators
+- Missing sleep, activity, or mood data is common and often means the user didn't record data (not that they didn't sleep, exercise, or had a bad day)
+- Only make assessments based on available data points
+- Lower your confidence score when data is sparse
+- If less than 50% of days have data for a particular metric, do not draw strong conclusions about that metric
+
 Health metrics summary:
 `;
 
@@ -639,57 +647,14 @@ Health metrics summary:
 
             await mentalHealthState.save();
 
-            // If support is needed, initiate the support request system
+            // If support is needed, use the dedicated peer support service
             if (analysis.needsSupport) {
-                await this.initiateSupportRequest(userId, mentalHealthState._id);
+                await peerSupportService.initiateSupportRequest(userId, mentalHealthState._id);
             }
 
             return mentalHealthState;
         } catch (error) {
             console.error('[LLM] Error saving mental health state:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Initiate the tiered support request system
-     */
-    private async initiateSupportRequest(userId: string, assessmentId: Types.ObjectId): Promise<void> {
-        try {
-            // Get the user's buddy peers
-            const user = await User.findById(userId)
-                .select('buddyPeers')
-                .populate('buddyPeers.userId');
-
-            if (!user) {
-                throw new Error('User not found');
-            }
-
-            if (user.buddyPeers.length === 0) {
-                // No buddy peers, update the support request status to reflect this
-                await MentalHealthState.findByIdAndUpdate(assessmentId, {
-                    $set: {
-                        supportRequestStatus: 'communityRequested',
-                        supportRequestTime: new Date()
-                    }
-                });
-
-                // Implement community support request
-                // This would be implemented in the next phase
-            } else {
-                // User has buddy peers, request support from them
-                await MentalHealthState.findByIdAndUpdate(assessmentId, {
-                    $set: {
-                        supportRequestStatus: 'buddyRequested',
-                        supportRequestTime: new Date()
-                    }
-                });
-
-                // Actually send notifications to buddy peers
-                // This would be implemented with your notification system
-            }
-        } catch (error) {
-            console.error('[LLM] Error initiating support request:', error);
             throw error;
         }
     }
