@@ -7,6 +7,19 @@ import { User } from '../Database/Schema';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
 import { peerSupportService } from './peerSupportService';
 
+interface ActivityRating {
+    level: 'low' | 'moderate' | 'high';
+    trend: 'increasing' | 'stable' | 'decreasing';
+    interpretation?: string;
+}
+
+interface ActivityRatings {
+    sleep?: ActivityRating;
+    exercise?: ActivityRating;
+    social?: ActivityRating;
+    work?: ActivityRating;
+}
+
 interface LLMResponse {
     mentalHealthStatus: 'stable' | 'declining' | 'critical';
     confidenceScore: number;
@@ -14,6 +27,8 @@ interface LLMResponse {
         sleepHours?: number;
         sleepQuality?: 'poor' | 'fair' | 'good';
         activityLevel?: 'low' | 'moderate' | 'high';
+        activityRatings?: ActivityRatings;
+        lifeBalance?: string;
         checkInMood?: number;
         checkInNotes?: string;
         recentExerciseMinutes?: number;
@@ -199,6 +214,110 @@ class LLMAnalysisService {
     }
 
     /**
+     * Analyze activity ratings from check-ins and provide context-aware interpretations
+     */
+    private analyzeActivityRatings(checkIns: any[]): ActivityRatings {
+        const activityTypes = ['Sleep', 'Exercise', 'Social', 'Work'];
+        const result: ActivityRatings = {};
+        
+        // Skip if no check-ins with activities
+        if (!checkIns.length) return result;
+        
+        // For each activity type, calculate average and trend
+        activityTypes.forEach(type => {
+            // Get all ratings for this activity type
+            const ratings = checkIns
+                .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
+                .map(c => c.activities.find((a: any) => a.type === type).level);
+            
+            if (ratings.length === 0) return;
+            
+            // Convert ratings to numeric values for calculation
+            const ratingValues = {
+                'low': 1,
+                'moderate': 2,
+                'high': 3
+            };
+            
+            // Convert to numbers
+            const numericRatings = ratings.map(r => ratingValues[r as 'low' | 'moderate' | 'high']);
+            
+            // Calculate average
+            const avg = numericRatings.reduce((sum, val) => sum + val, 0) / numericRatings.length;
+            let level: 'low' | 'moderate' | 'high' = 'moderate';
+            if (avg <= 1.33) level = 'low';
+            else if (avg >= 2.33) level = 'high';
+            
+            // Detect trend (if we have enough data points)
+            let trend: 'increasing' | 'stable' | 'decreasing' = 'stable';
+            if (ratings.length >= 3) {
+                const recent = numericRatings.slice(-2).reduce((sum, val) => sum + val, 0) / 2;
+                const older = numericRatings.slice(0, -2).reduce((sum, val) => sum + val, 0) / numericRatings.slice(0, -2).length;
+                
+                if (recent - older > 0.5) trend = 'increasing';
+                else if (older - recent > 0.5) trend = 'decreasing';
+            }
+            
+            // Add context-aware interpretation based on activity type
+            let interpretation = '';
+            const key = type.toLowerCase() as 'sleep' | 'exercise' | 'social' | 'work';
+            
+            switch (key) {
+                case 'sleep':
+                    if (level === 'high') {
+                        interpretation = 'Adequate sleep is a positive indicator for mental health';
+                    } else if (level === 'low') {
+                        interpretation = 'Low sleep may indicate insomnia or sleep deprivation, which can negatively impact mental health';
+                    }
+                    if (trend === 'decreasing') {
+                        interpretation += '; decreasing trend may be concerning';
+                    }
+                    break;
+                    
+                case 'exercise':
+                    if (level === 'high') {
+                        interpretation = 'Regular exercise is beneficial for mental health';
+                    } else if (level === 'low') {
+                        interpretation = 'Low physical activity may contribute to decreased mood and energy levels';
+                    }
+                    if (trend === 'increasing') {
+                        interpretation += '; increasing trend is encouraging';
+                    }
+                    break;
+                    
+                case 'social':
+                    if (level === 'high') {
+                        interpretation = 'Strong social connections are protective for mental health';
+                    } else if (level === 'low') {
+                        interpretation = 'Limited social interaction may indicate isolation or withdrawal';
+                    }
+                    if (trend === 'decreasing') {
+                        interpretation += '; decreasing social activity may be a warning sign';
+                    }
+                    break;
+                    
+                case 'work':
+                    if (level === 'high') {
+                        interpretation = 'High work intensity may indicate stress or potential burnout risk';
+                    } else if (level === 'moderate') {
+                        interpretation = 'Moderate work engagement suggests a healthy balance';
+                    } else if (level === 'low') {
+                        interpretation = 'Low work activity could indicate either healthy boundaries or potential disengagement';
+                    }
+                    if (trend === 'increasing' && level === 'high') {
+                        interpretation += '; increasing high workload is concerning for burnout';
+                    }
+                    break;
+            }
+            
+            // Set the property using lowercase key
+            result[key] = { level, trend, interpretation };
+        });
+        
+        return result;
+    }
+
+    /**
      * Calculate average mood from check-ins
      */
     private calculateAverageMood(checkIns: any[]): number | undefined {
@@ -334,6 +453,36 @@ class LLMAnalysisService {
             }
         }
 
+        // Check for changes in activity ratings from check-ins
+        if (checkIns.length >= 4) {
+            const activityTypes = ['Sleep', 'Exercise', 'Social', 'Work'];
+            
+            activityTypes.forEach(type => {
+                const recentRatings = checkIns.slice(0, 2)
+                    .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
+                    .map(c => c.activities.find((a: any) => a.type === type).level);
+                
+                const previousRatings = checkIns.slice(2, 4)
+                    .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
+                    .map(c => c.activities.find((a: any) => a.type === type).level);
+                
+                if (recentRatings.length > 0 && previousRatings.length > 0) {
+                    const ratingValues = {
+                        'low': 1,
+                        'moderate': 2,
+                        'high': 3
+                    };
+                    
+                    const recentAvg = recentRatings.reduce((sum, r) => sum + ratingValues[r as 'low' | 'moderate' | 'high'], 0) / recentRatings.length;
+                    const previousAvg = previousRatings.reduce((sum, r) => sum + ratingValues[r as 'low' | 'moderate' | 'high'], 0) / previousRatings.length;
+                    
+                    if (Math.abs(recentAvg - previousAvg) >= 1) {
+                        changes.push(`Self-reported ${type.toLowerCase()} level changed significantly`);
+                    }
+                }
+            });
+        }
+
         return changes;
     }
 
@@ -388,6 +537,13 @@ IMPORTANT NOTE ABOUT MISSING DATA:
 - Lower your confidence score when data is sparse
 - If less than 50% of days have data for a particular metric, do not draw strong conclusions about that metric
 
+IMPORTANT NOTE ABOUT ACTIVITY RATINGS:
+Different activity ratings have different implications for mental health:
+- Sleep: High ratings are generally positive (adequate rest), while low ratings may indicate insomnia or sleep deprivation
+- Exercise: High ratings are generally positive (active lifestyle), while low ratings may indicate sedentary behavior
+- Social: High ratings are generally positive (good social connections), while low ratings may indicate isolation or withdrawal
+- Work: High ratings may be concerning (overwork, burnout), while moderate ratings are typically optimal for wellbeing
+
 Health metrics summary:
 `;
 
@@ -424,12 +580,22 @@ Health metrics summary:
             prompt += "No activity data available.\n";
         }
 
-        // Format mood check-ins
-        prompt += "\nMood check-ins:\n";
+        // Format mood check-ins with activity ratings
+        prompt += "\nMood check-ins and activity ratings:\n";
         if (checkIns.length > 0) {
             checkIns.forEach((checkIn: any) => {
                 const date = checkIn.timestamp.toISOString().split('T')[0];
                 prompt += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
+                
+                // Add activity ratings
+                if (checkIn.activities && checkIn.activities.length > 0) {
+                    prompt += ", Activities: [";
+                    prompt += checkIn.activities.map((activity: any) => 
+                        `${activity.type}: ${activity.level}`
+                    ).join(", ");
+                    prompt += "]";
+                }
+                
                 if (checkIn.notes) {
                     prompt += `, Notes: "${checkIn.notes}"`;
                 }
@@ -441,45 +607,55 @@ Health metrics summary:
 
         // Add assessment instructions
         prompt += `
-        Based on this data, please analyze the user's mental health state. Consider the following metrics:
-        1. Sleep hours and quality
-        2. Activity level (based on steps and exercise)
-        3. Mood from check-ins
-        4. Any significant changes in patterns
-        5. Any risk or protective factors evident in the data
-        
-        Provide your assessment in the following JSON format (and only respond with this JSON):
-        {
-          "mentalHealthStatus": "stable|declining|critical",
-          "confidenceScore": 0.XX,
-          "reasoningData": {
-            "sleepHours": X.X,
-            "sleepQuality": "poor|fair|good",
-            "activityLevel": "low|moderate|high",
-            "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
-            "checkInNotes": "summary of relevant notes",
-            "recentExerciseMinutes": XXX,
-            "stepsPerDay": XXXX,
-            "significantChanges": ["list any significant changes you identified"],
-            "additionalFactors": {
-              "key1": "value1",
-              "key2": "value2"
-            }
-          },
-          "needsSupport": true|false
-        }
-        
-        For mentalHealthStatus:
-        - "stable" means the user's metrics indicate good mental health with no major concerns
-        - "declining" means there are some concerning patterns that might indicate declining mental health
-        - "critical" means there are serious concerns that require immediate attention
-        
-        For checkInMood:
-        - Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
-        - Do NOT use string labels like "good" or "poor" for this field
-        
-        Only include fields in reasoningData if you have sufficient information to make a determination.
-        `;
+Based on this data, please analyze the user's mental health state. Consider the following metrics:
+1. Sleep hours and quality (both from health data and user's own ratings)
+2. Exercise and physical activity level (from health data and user's ratings)
+3. Social activity ratings from check-ins
+4. Work activity ratings from check-ins (note that high work ratings may indicate overwork/burnout)
+5. Mood from check-ins
+6. Any significant changes in patterns
+7. Any risk or protective factors evident in the data
+8. Balance between different life activities (sleep, exercise, social, work)
+
+Provide your assessment in the following JSON format (and only respond with this JSON):
+{
+  "mentalHealthStatus": "stable|declining|critical",
+  "confidenceScore": 0.XX,
+  "reasoningData": {
+    "sleepHours": X.X,
+    "sleepQuality": "poor|fair|good",
+    "activityLevel": "low|moderate|high",
+    "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
+    "activityRatings": {
+      "sleep": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
+      "exercise": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
+      "social": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
+      "work": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"}
+    },
+    "lifeBalance": "assessment of overall balance between activities",
+    "checkInNotes": "summary of relevant notes",
+    "recentExerciseMinutes": XXX,
+    "stepsPerDay": XXXX,
+    "significantChanges": ["list any significant changes you identified"],
+    "additionalFactors": {
+      "key1": "value1",
+      "key2": "value2"
+    }
+  },
+  "needsSupport": true|false
+}
+
+For mentalHealthStatus:
+- "stable" means the user's metrics indicate good mental health with no major concerns
+- "declining" means there are some concerning patterns that might indicate declining mental health
+- "critical" means there are serious concerns that require immediate attention
+
+For checkInMood:
+- Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
+- Do NOT use string labels like "good" or "poor" for this field
+
+Only include fields in reasoningData if you have sufficient information to make a determination.
+`;
 
         return prompt;
     }
@@ -516,6 +692,85 @@ Health metrics summary:
     }
 
     /**
+     * Analyze life balance across different activity domains
+     */
+    private analyzeLifeBalance(activityRatings: ActivityRatings): { assessment: string, details: string[] } {
+        // Check if we have enough data
+        if (!activityRatings || Object.keys(activityRatings).length < 2) {
+            return {
+                assessment: "Insufficient data to assess life balance",
+                details: []
+            };
+        }
+        
+        // Convert ratings to numeric values
+        const ratingValues = {
+            'low': 1,
+            'moderate': 2,
+            'high': 3
+        };
+        
+        // Define ideal ranges for different activities (simplified model)
+        const idealRanges: Record<string, { min: number, max: number }> = {
+            'sleep': { min: 2, max: 3 },     // moderate to high is ideal
+            'exercise': { min: 2, max: 3 },  // moderate to high is ideal
+            'social': { min: 2, max: 3 },    // moderate to high is ideal
+            'work': { min: 1.5, max: 2.5 }   // moderate is ideal, not too high or low
+        };
+        
+        // Analyze each activity
+        const analysis: string[] = [];
+        let imbalanceCount = 0;
+        
+        for (const [activity, rating] of Object.entries(activityRatings)) {
+            if (!rating || !rating.level) continue;
+            
+            const numericRating = ratingValues[rating.level as 'low' | 'moderate' | 'high'];
+            const ideal = idealRanges[activity];
+            
+            if (!ideal) continue;
+            
+            if (numericRating < ideal.min) {
+                analysis.push(`${activity} is lower than optimal`);
+                imbalanceCount++;
+            } else if (numericRating > ideal.max) {
+                analysis.push(`${activity} is higher than optimal`);
+                imbalanceCount++;
+                
+                // Special case for work being too high
+                if (activity === 'work' && numericRating > 2.5) {
+                    analysis.push("High work levels may be displacing other life activities");
+                }
+            }
+        }
+        
+        // Look for specific imbalance patterns
+        if (activityRatings.work && activityRatings.sleep) {
+            const workRating = ratingValues[activityRatings.work.level];
+            const sleepRating = ratingValues[activityRatings.sleep.level];
+            
+            if (workRating > 2.5 && sleepRating < 2) {
+                analysis.push("Work-sleep imbalance detected: high work correlates with insufficient sleep");
+            }
+        }
+        
+        // Generate overall assessment
+        let overallAssessment = "";
+        if (imbalanceCount === 0) {
+            overallAssessment = "Good overall life balance across activities";
+        } else if (imbalanceCount === 1) {
+            overallAssessment = "Generally balanced with one area needing attention";
+        } else if (imbalanceCount >= 2) {
+            overallAssessment = "Multiple imbalances detected across life activities";
+        }
+        
+        return {
+            assessment: overallAssessment,
+            details: analysis
+        };
+    }
+
+    /**
      * Pre-process the data to help guide the LLM
      */
     private preprocessData(userData: any): LLMResponse {
@@ -525,11 +780,24 @@ Health metrics summary:
         const sleepHours = this.calculateAverageSleepHours(healthData);
         const sleepQuality = this.determineSleepQuality(healthData);
         const activityLevel = this.determineActivityLevel(healthData);
+        const activityRatings = this.analyzeActivityRatings(checkIns);
         const checkInMood = this.calculateAverageMood(checkIns);
         const checkInNotes = this.getLatestCheckInNotes(checkIns);
         const recentExerciseMinutes = this.calculateRecentExerciseMinutes(healthData);
         const stepsPerDay = this.calculateAverageSteps(healthData);
         const significantChanges = this.detectSignificantChanges(healthData, checkIns);
+        
+        // Analyze life balance if we have activity ratings
+        let lifeBalance: string | undefined = undefined;
+        if (activityRatings && Object.keys(activityRatings).length > 0) {
+            const balanceAnalysis = this.analyzeLifeBalance(activityRatings);
+            lifeBalance = balanceAnalysis.assessment;
+            
+            // Add important imbalances to significant changes
+            if (balanceAnalysis.details.length > 0) {
+                significantChanges.push(...balanceAnalysis.details);
+            }
+        }
 
         // This is a simplified assessment to help guide the LLM
         // The actual assessment will be done by the LLM
@@ -543,6 +811,12 @@ Health metrics summary:
         } else if (significantChanges.length > 2) {
             mentalHealthStatus = 'declining';
         }
+        
+        // Check for work-life imbalance as a risk factor
+        if (activityRatings?.work?.level === 'high' && 
+            (activityRatings?.sleep?.level === 'low' || activityRatings?.social?.level === 'low')) {
+            mentalHealthStatus = 'declining';
+        }
 
         return {
             mentalHealthStatus,
@@ -551,6 +825,8 @@ Health metrics summary:
                 sleepHours,
                 sleepQuality,
                 activityLevel,
+                activityRatings,
+                lifeBalance,
                 checkInMood,
                 checkInNotes,
                 recentExerciseMinutes,
@@ -616,6 +892,7 @@ Health metrics summary:
                 sleepHours: llmResponse.reasoningData.sleepHours || preprocessedData.reasoningData.sleepHours,
                 sleepQuality: llmResponse.reasoningData.sleepQuality || preprocessedData.reasoningData.sleepQuality,
                 activityLevel: llmResponse.reasoningData.activityLevel || preprocessedData.reasoningData.activityLevel,
+                activityRatings: llmResponse.reasoningData.activityRatings || preprocessedData.reasoningData.activityRatings,
                 checkInMood: checkInMood, // Use the converted value
                 checkInNotes: llmResponse.reasoningData.checkInNotes || preprocessedData.reasoningData.checkInNotes,
                 recentExerciseMinutes: llmResponse.reasoningData.recentExerciseMinutes || preprocessedData.reasoningData.recentExerciseMinutes,
