@@ -1,6 +1,7 @@
 // server/routes/mentalHealth.ts
 import express from 'express';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
+import { MentalHealthBaseline, IMentalHealthBaseline } from '../Database/MentalHealthBaselineSchema';
 import { llmAnalysisService } from '../services/llmAnalysisService';
 import { auth } from '../services/auth';
 import { ApiError } from '../middleware/error';
@@ -51,6 +52,29 @@ router.get('/assessment', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Get the latest baseline
+router.get('/baseline', authenticateToken, async (req: any, res) => {
+  try {
+    const baseline = await MentalHealthBaseline.findOne({
+      userId: new Types.ObjectId(req.userId)
+    })
+    .sort({ establishedAt: -1 })
+    .limit(1);
+    
+    if (!baseline) {
+      return res.status(404).json({
+        error: 'No baseline found',
+        message: 'You need to establish a baseline first. Use the "Establish Mental Health Baseline" feature.'
+      });
+    }
+    
+    res.json(baseline);
+  } catch (error) {
+    console.error('Get baseline error:', error);
+    res.status(500).json({ error: 'Failed to fetch mental health baseline' });
+  }
+});
+
 // Trigger a new standard mental health assessment (14-day analysis)
 router.post('/assess', authenticateToken, async (req: any, res) => {
   try {
@@ -82,7 +106,7 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
 // Trigger a baseline analysis using all historical data
 router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
   try {
-    // Show a warning if the user doesn't have much data
+    // Check if there's enough data to establish a meaningful baseline
     const healthDataCount = await MentalHealthState.countDocuments({
       userId: new Types.ObjectId(req.userId)
     });
@@ -93,15 +117,18 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
     // Format response with special baseline information
     const response = {
       message: 'Baseline mental health assessment completed',
-      status: analysisResult.mentalHealthStatus,
-      needsSupport: analysisResult.needsSupport,
-      confidenceScore: analysisResult.confidenceScore,
-      reasoning: {
+      baselineMetrics: {
         sleepQuality: analysisResult.reasoningData.sleepQuality,
         activityLevel: analysisResult.reasoningData.activityLevel,
-        averageMood: analysisResult.reasoningData.checkInMood,
-        significantChanges: analysisResult.reasoningData.significantChanges
+        averageMoodScore: analysisResult.reasoningData.checkInMood,
+        averageStepsPerDay: analysisResult.reasoningData.stepsPerDay,
+        exerciseMinutesPerWeek: analysisResult.reasoningData.recentExerciseMinutes ? 
+          analysisResult.reasoningData.recentExerciseMinutes * 7 / 3 : undefined
       },
+      dataPoints: {
+        totalDays: healthDataCount
+      },
+      confidenceScore: analysisResult.confidenceScore,
       analysisType: 'baseline',
       note: healthDataCount < 5 ? 
         'Limited historical data available. For more accurate baselines, continue recording health data.' : 
@@ -118,8 +145,34 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
 // Trigger a recent analysis (past 3 days with recency weighting)
 router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
   try {
+    // Get the baseline for comparison - use proper type assertion
+    const baseline = await MentalHealthBaseline.findOne({
+      userId: new Types.ObjectId(req.userId)
+    })
+    .sort({ establishedAt: -1 })
+    .lean() as IMentalHealthBaseline | null;
+    
     // Trigger the recent analysis
     const analysisResult = await llmAnalysisService.analyzeRecentHealth(req.userId);
+    
+    // Prepare baseline comparison if available
+    let baselineComparison = null;
+    if (baseline) {
+      baselineComparison = {
+        sleepChange: compareMetrics(
+          analysisResult.reasoningData.sleepQuality, 
+          baseline.baselineMetrics?.sleepQuality
+        ),
+        activityChange: compareMetrics(
+          analysisResult.reasoningData.activityLevel, 
+          baseline.baselineMetrics?.activityLevel
+        ),
+        moodChange: compareMoodScore(
+          analysisResult.reasoningData.checkInMood,
+          baseline.baselineMetrics?.averageMoodScore
+        )
+      };
+    }
     
     // Format response for recent analysis
     const response = {
@@ -127,6 +180,7 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
       status: analysisResult.mentalHealthStatus,
       needsSupport: analysisResult.needsSupport,
       confidenceScore: analysisResult.confidenceScore,
+      baselineComparison,
       reasoning: {
         sleepQuality: analysisResult.reasoningData.sleepQuality,
         activityLevel: analysisResult.reasoningData.activityLevel,
@@ -143,6 +197,59 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
     res.status(500).json({ error: 'Failed to analyze recent mental health data' });
   }
 });
+
+// Helper function to compare metrics
+function compareMetrics(current: string | undefined, baseline: string | undefined): string | null {
+  if (!current || !baseline) return null;
+  
+  const qualityScale = {
+    'poor': 1,
+    'fair': 2,
+    'good': 3
+  };
+  
+  const activityScale = {
+    'low': 1,
+    'moderate': 2,
+    'high': 3
+  };
+  
+  let currentValue: number, baselineValue: number;
+  
+  if (current === 'poor' || current === 'fair' || current === 'good') {
+    currentValue = qualityScale[current];
+    baselineValue = qualityScale[baseline as 'poor' | 'fair' | 'good'];
+  } else {
+    currentValue = activityScale[current as 'low' | 'moderate' | 'high'];
+    baselineValue = activityScale[baseline as 'low' | 'moderate' | 'high'];
+  }
+  
+  if (currentValue > baselineValue) {
+    return 'Improved compared to baseline';
+  } else if (currentValue < baselineValue) {
+    return 'Declined compared to baseline';
+  } else {
+    return 'Consistent with baseline';
+  }
+}
+
+// Helper function to compare mood scores
+function compareMoodScore(current: number | undefined, baseline: number | undefined): string | null {
+  if (!current || !baseline) return null;
+  
+  const difference = current - baseline;
+  const thresholdPct = 0.15; // 15% change threshold
+  
+  if (Math.abs(difference) < baseline * thresholdPct) {
+    return 'Mood consistent with baseline';
+  } else if (difference > 0) {
+    const pctImprovement = (difference / baseline * 100).toFixed(0);
+    return `Mood improved by ${pctImprovement}% compared to baseline`;
+  } else {
+    const pctDecline = (Math.abs(difference) / baseline * 100).toFixed(0);
+    return `Mood decreased by ${pctDecline}% compared to baseline`;
+  }
+}
 
 // Get assessment history
 router.get('/history', authenticateToken, async (req: any, res) => {
@@ -192,6 +299,25 @@ router.get('/history', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Get assessment history error:', error);
     res.status(500).json({ error: 'Failed to fetch assessment history' });
+  }
+});
+
+// Get baseline history
+router.get('/baseline/history', authenticateToken, async (req: any, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    
+    const baselines = await MentalHealthBaseline.find({
+      userId: new Types.ObjectId(req.userId)
+    })
+    .sort({ establishedAt: -1 })
+    .limit(parseInt(limit as string))
+    .lean();
+    
+    res.json(baselines);
+  } catch (error) {
+    console.error('Get baseline history error:', error);
+    res.status(500).json({ error: 'Failed to fetch baseline history' });
   }
 });
 
@@ -283,6 +409,13 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       analysisType: assessment.metadata?.analysisType || 'standard'
     }));
     
+    // Get the latest baseline - use proper type assertion
+    const latestBaseline = await MentalHealthBaseline.findOne({
+      userId: new Types.ObjectId(req.userId)
+    })
+    .sort({ establishedAt: -1 })
+    .lean() as IMentalHealthBaseline | null;
+    
     // Prepare response
     const stats = {
       totalAssessments: assessments.length,
@@ -293,6 +426,13 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       averageConfidence: assessments.length > 0 ? totalConfidence / assessments.length : 0,
       averageMood: moodCount > 0 ? totalMood / moodCount : 0,
       trends: trendData,
+      baseline: latestBaseline ? {
+        establishedAt: latestBaseline.establishedAt,
+        sleepQuality: latestBaseline.baselineMetrics?.sleepQuality,
+        activityLevel: latestBaseline.baselineMetrics?.activityLevel,
+        averageMoodScore: latestBaseline.baselineMetrics?.averageMoodScore,
+        confidenceScore: latestBaseline.confidenceScore
+      } : null,
       period: {
         days: parseInt(days as string),
         startDate,
@@ -421,9 +561,22 @@ router.post('/admin/clear-assessments', authenticateToken, async (req: any, res)
       userId: new Types.ObjectId(req.userId)
     });
     
+    // Also clear baselines if requested
+    const includeBaselines = req.query.includeBaselines === 'true';
+    let baselineResult = { deletedCount: 0 };
+    
+    if (includeBaselines) {
+      baselineResult = await MentalHealthBaseline.deleteMany({
+        userId: new Types.ObjectId(req.userId)
+      });
+    }
+    
     res.json({ 
-      message: `Cleared ${result.deletedCount} mental health assessments`,
-      count: result.deletedCount
+      message: `Cleared ${result.deletedCount} mental health assessments${
+        includeBaselines ? ` and ${baselineResult.deletedCount} baselines` : ''
+      }`,
+      assessmentCount: result.deletedCount,
+      baselineCount: baselineResult.deletedCount
     });
   } catch (error) {
     console.error('Clear assessments error:', error);
