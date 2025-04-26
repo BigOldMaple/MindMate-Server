@@ -6,19 +6,11 @@ import { CheckIn } from '../Database/CheckInSchema';
 import { User } from '../Database/Schema';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
 import { peerSupportService } from './peerSupportService';
+import { MentalHealthBaseline, IMentalHealthBaseline } from '../Database/MentalHealthBaselineSchema';
 
-interface ActivityRating {
-    level: 'low' | 'moderate' | 'high';
-    trend: 'increasing' | 'stable' | 'decreasing';
-    interpretation?: string;
-}
 
-interface ActivityRatings {
-    sleep?: ActivityRating;
-    exercise?: ActivityRating;
-    social?: ActivityRating;
-    work?: ActivityRating;
-}
+// Define the analysis type
+export type AnalysisType = 'baseline' | 'recent' | 'standard';
 
 interface LLMResponse {
     mentalHealthStatus: 'stable' | 'declining' | 'critical';
@@ -27,8 +19,6 @@ interface LLMResponse {
         sleepHours?: number;
         sleepQuality?: 'poor' | 'fair' | 'good';
         activityLevel?: 'low' | 'moderate' | 'high';
-        activityRatings?: ActivityRatings;
-        lifeBalance?: string;
         checkInMood?: number;
         checkInNotes?: string;
         recentExerciseMinutes?: number;
@@ -37,6 +27,48 @@ interface LLMResponse {
         additionalFactors?: Record<string, any>;
     };
     needsSupport: boolean;
+}
+
+// Define types for health data and check-ins
+interface HealthDataRecord {
+    date: Date;
+    sleep?: {
+        durationInSeconds: number;
+        quality?: 'poor' | 'fair' | 'good';
+    };
+    summary?: {
+        totalSteps: number;
+        totalExerciseSeconds: number;
+    };
+    exercises?: Array<any>;
+    [key: string]: any;
+}
+
+interface CheckInRecord {
+    timestamp: Date;
+    mood: {
+        score: number;
+        label: string;
+    };
+    notes?: string;
+    [key: string]: any;
+}
+
+// Interface for baseline assessment data
+interface BaselineAssessment {
+    timestamp: Date;
+    mentalHealthStatus: 'stable' | 'declining' | 'critical';
+    confidenceScore: number;
+    reasoningData: {
+        sleepHours?: number;
+        sleepQuality?: 'poor' | 'fair' | 'good';
+        activityLevel?: 'low' | 'moderate' | 'high';
+        checkInMood?: number;
+        stepsPerDay?: number;
+        recentExerciseMinutes?: number;
+        [key: string]: any;
+    };
+    [key: string]: any;
 }
 
 class LLMAnalysisService {
@@ -78,8 +110,8 @@ class LLMAnalysisService {
     }
 
     /**
-   * Convert mood string values to numeric values if needed
-   */
+     * Convert mood string values to numeric values if needed
+     */
     private convertMoodToNumber(mood: any): number | undefined {
         if (mood === undefined || mood === null) {
             return undefined;
@@ -128,7 +160,7 @@ class LLMAnalysisService {
     /**
      * Calculate average sleep hours from health data
      */
-    private calculateAverageSleepHours(healthData: any[]): number | undefined {
+    private calculateAverageSleepHours(healthData: HealthDataRecord[]): number | undefined {
         const sleepEntries = healthData.filter(day => day.sleep && day.sleep.durationInSeconds);
 
         if (sleepEntries.length === 0) {
@@ -136,7 +168,7 @@ class LLMAnalysisService {
         }
 
         const totalSleepSeconds = sleepEntries.reduce(
-            (total, day) => total + day.sleep.durationInSeconds, 0
+            (total, day) => total + day.sleep!.durationInSeconds, 0
         );
 
         return +(totalSleepSeconds / 3600 / sleepEntries.length).toFixed(1);
@@ -145,7 +177,7 @@ class LLMAnalysisService {
     /**
      * Calculate sleep quality based on sleep data
      */
-    private determineSleepQuality(healthData: any[]): 'poor' | 'fair' | 'good' | undefined {
+    private determineSleepQuality(healthData: HealthDataRecord[]): 'poor' | 'fair' | 'good' | undefined {
         const sleepEntries = healthData.filter(day => day.sleep && day.sleep.quality);
 
         if (sleepEntries.length === 0) {
@@ -160,7 +192,9 @@ class LLMAnalysisService {
         };
 
         sleepEntries.forEach(day => {
-            qualityCounts[day.sleep.quality as 'poor' | 'fair' | 'good']++;
+            if (day.sleep?.quality) {
+                qualityCounts[day.sleep.quality as 'poor' | 'fair' | 'good']++;
+            }
         });
 
         // Determine the most common quality
@@ -180,7 +214,7 @@ class LLMAnalysisService {
     /**
      * Calculate activity level based on steps and exercises
      */
-    private determineActivityLevel(healthData: any[]): 'low' | 'moderate' | 'high' | undefined {
+    private determineActivityLevel(healthData: HealthDataRecord[]): 'low' | 'moderate' | 'high' | undefined {
         // Filter out days with no activity data
         const activityDays = healthData.filter(
             day => (day.summary && day.summary.totalSteps > 0) ||
@@ -214,113 +248,9 @@ class LLMAnalysisService {
     }
 
     /**
-     * Analyze activity ratings from check-ins and provide context-aware interpretations
-     */
-    private analyzeActivityRatings(checkIns: any[]): ActivityRatings {
-        const activityTypes = ['Sleep', 'Exercise', 'Social', 'Work'];
-        const result: ActivityRatings = {};
-        
-        // Skip if no check-ins with activities
-        if (!checkIns.length) return result;
-        
-        // For each activity type, calculate average and trend
-        activityTypes.forEach(type => {
-            // Get all ratings for this activity type
-            const ratings = checkIns
-                .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
-                .map(c => c.activities.find((a: any) => a.type === type).level);
-            
-            if (ratings.length === 0) return;
-            
-            // Convert ratings to numeric values for calculation
-            const ratingValues = {
-                'low': 1,
-                'moderate': 2,
-                'high': 3
-            };
-            
-            // Convert to numbers
-            const numericRatings = ratings.map(r => ratingValues[r as 'low' | 'moderate' | 'high']);
-            
-            // Calculate average
-            const avg = numericRatings.reduce((sum, val) => sum + val, 0) / numericRatings.length;
-            let level: 'low' | 'moderate' | 'high' = 'moderate';
-            if (avg <= 1.33) level = 'low';
-            else if (avg >= 2.33) level = 'high';
-            
-            // Detect trend (if we have enough data points)
-            let trend: 'increasing' | 'stable' | 'decreasing' = 'stable';
-            if (ratings.length >= 3) {
-                const recent = numericRatings.slice(-2).reduce((sum, val) => sum + val, 0) / 2;
-                const older = numericRatings.slice(0, -2).reduce((sum, val) => sum + val, 0) / numericRatings.slice(0, -2).length;
-                
-                if (recent - older > 0.5) trend = 'increasing';
-                else if (older - recent > 0.5) trend = 'decreasing';
-            }
-            
-            // Add context-aware interpretation based on activity type
-            let interpretation = '';
-            const key = type.toLowerCase() as 'sleep' | 'exercise' | 'social' | 'work';
-            
-            switch (key) {
-                case 'sleep':
-                    if (level === 'high') {
-                        interpretation = 'Adequate sleep is a positive indicator for mental health';
-                    } else if (level === 'low') {
-                        interpretation = 'Low sleep may indicate insomnia or sleep deprivation, which can negatively impact mental health';
-                    }
-                    if (trend === 'decreasing') {
-                        interpretation += '; decreasing trend may be concerning';
-                    }
-                    break;
-                    
-                case 'exercise':
-                    if (level === 'high') {
-                        interpretation = 'Regular exercise is beneficial for mental health';
-                    } else if (level === 'low') {
-                        interpretation = 'Low physical activity may contribute to decreased mood and energy levels';
-                    }
-                    if (trend === 'increasing') {
-                        interpretation += '; increasing trend is encouraging';
-                    }
-                    break;
-                    
-                case 'social':
-                    if (level === 'high') {
-                        interpretation = 'Strong social connections are protective for mental health';
-                    } else if (level === 'low') {
-                        interpretation = 'Limited social interaction may indicate isolation or withdrawal';
-                    }
-                    if (trend === 'decreasing') {
-                        interpretation += '; decreasing social activity may be a warning sign';
-                    }
-                    break;
-                    
-                case 'work':
-                    if (level === 'high') {
-                        interpretation = 'High work intensity may indicate stress or potential burnout risk';
-                    } else if (level === 'moderate') {
-                        interpretation = 'Moderate work engagement suggests a healthy balance';
-                    } else if (level === 'low') {
-                        interpretation = 'Low work activity could indicate either healthy boundaries or potential disengagement';
-                    }
-                    if (trend === 'increasing' && level === 'high') {
-                        interpretation += '; increasing high workload is concerning for burnout';
-                    }
-                    break;
-            }
-            
-            // Set the property using lowercase key
-            result[key] = { level, trend, interpretation };
-        });
-        
-        return result;
-    }
-
-    /**
      * Calculate average mood from check-ins
      */
-    private calculateAverageMood(checkIns: any[]): number | undefined {
+    private calculateAverageMood(checkIns: CheckInRecord[]): number | undefined {
         if (checkIns.length === 0) {
             return undefined;
         }
@@ -335,7 +265,7 @@ class LLMAnalysisService {
     /**
      * Extract the latest check-in notes
      */
-    private getLatestCheckInNotes(checkIns: any[]): string | undefined {
+    private getLatestCheckInNotes(checkIns: CheckInRecord[]): string | undefined {
         if (checkIns.length === 0) {
             return undefined;
         }
@@ -354,7 +284,7 @@ class LLMAnalysisService {
     /**
      * Calculate recent exercise minutes
      */
-    private calculateRecentExerciseMinutes(healthData: any[]): number | undefined {
+    private calculateRecentExerciseMinutes(healthData: HealthDataRecord[]): number | undefined {
         const exerciseDays = healthData.filter(
             day => day.exercises && day.exercises.length > 0
         );
@@ -364,7 +294,7 @@ class LLMAnalysisService {
         }
 
         const totalExerciseSeconds = exerciseDays.reduce(
-            (total, day) => total + day.summary.totalExerciseSeconds, 0
+            (total, day) => total + (day.summary?.totalExerciseSeconds || 0), 0
         );
 
         return Math.round(totalExerciseSeconds / 60);
@@ -373,7 +303,7 @@ class LLMAnalysisService {
     /**
      * Calculate average steps per day
      */
-    private calculateAverageSteps(healthData: any[]): number | undefined {
+    private calculateAverageSteps(healthData: HealthDataRecord[]): number | undefined {
         const stepDays = healthData.filter(
             day => day.summary && day.summary.totalSteps > 0
         );
@@ -383,7 +313,7 @@ class LLMAnalysisService {
         }
 
         const totalSteps = stepDays.reduce(
-            (total, day) => total + day.summary.totalSteps, 0
+            (total, day) => total + day.summary!.totalSteps, 0
         );
 
         return Math.round(totalSteps / stepDays.length);
@@ -392,7 +322,7 @@ class LLMAnalysisService {
     /**
      * Detect significant changes in metrics
      */
-    private detectSignificantChanges(healthData: any[], checkIns: any[]): string[] {
+    private detectSignificantChanges(healthData: HealthDataRecord[], checkIns: CheckInRecord[]): string[] {
         const changes: string[] = [];
 
         // Check for sleep pattern changes
@@ -402,11 +332,11 @@ class LLMAnalysisService {
 
             if (recentSleep.length > 0 && previousSleep.length > 0) {
                 const recentAvgSleep = recentSleep.reduce(
-                    (total, day) => total + day.sleep.durationInSeconds, 0
+                    (total, day) => total + day.sleep!.durationInSeconds, 0
                 ) / recentSleep.length / 3600;
 
                 const previousAvgSleep = previousSleep.reduce(
-                    (total, day) => total + day.sleep.durationInSeconds, 0
+                    (total, day) => total + day.sleep!.durationInSeconds, 0
                 ) / previousSleep.length / 3600;
 
                 if (Math.abs(recentAvgSleep - previousAvgSleep) > 1.5) {
@@ -422,11 +352,11 @@ class LLMAnalysisService {
 
             if (recentActivity.length > 0 && previousActivity.length > 0) {
                 const recentAvgSteps = recentActivity.reduce(
-                    (total, day) => total + day.summary.totalSteps, 0
+                    (total, day) => total + day.summary!.totalSteps, 0
                 ) / recentActivity.length;
 
                 const previousAvgSteps = previousActivity.reduce(
-                    (total, day) => total + day.summary.totalSteps, 0
+                    (total, day) => total + day.summary!.totalSteps, 0
                 ) / previousActivity.length;
 
                 if (Math.abs(recentAvgSteps - previousAvgSteps) / previousAvgSteps > 0.3) {
@@ -453,67 +383,53 @@ class LLMAnalysisService {
             }
         }
 
-        // Check for changes in activity ratings from check-ins
-        if (checkIns.length >= 4) {
-            const activityTypes = ['Sleep', 'Exercise', 'Social', 'Work'];
-            
-            activityTypes.forEach(type => {
-                const recentRatings = checkIns.slice(0, 2)
-                    .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
-                    .map(c => c.activities.find((a: any) => a.type === type).level);
-                
-                const previousRatings = checkIns.slice(2, 4)
-                    .filter(c => c.activities && c.activities.some((a: any) => a.type === type))
-                    .map(c => c.activities.find((a: any) => a.type === type).level);
-                
-                if (recentRatings.length > 0 && previousRatings.length > 0) {
-                    const ratingValues = {
-                        'low': 1,
-                        'moderate': 2,
-                        'high': 3
-                    };
-                    
-                    const recentAvg = recentRatings.reduce((sum, r) => sum + ratingValues[r as 'low' | 'moderate' | 'high'], 0) / recentRatings.length;
-                    const previousAvg = previousRatings.reduce((sum, r) => sum + ratingValues[r as 'low' | 'moderate' | 'high'], 0) / previousRatings.length;
-                    
-                    if (Math.abs(recentAvg - previousAvg) >= 1) {
-                        changes.push(`Self-reported ${type.toLowerCase()} level changed significantly`);
-                    }
-                }
-            });
-        }
-
         return changes;
     }
 
     /**
      * Collect health metrics for a user
+     * @param userId The user ID
+     * @param days Number of days to collect data for (0 means all history)
+     * @param analysisType Type of analysis being performed
      */
-    private async collectHealthData(userId: Types.ObjectId, days: number = 14): Promise<any> {
+    private async collectHealthData(
+        userId: Types.ObjectId, 
+        days: number = 14,
+        analysisType: AnalysisType = 'standard'
+    ): Promise<any> {
         try {
             // Get the date range for the query
             const endDate = new Date();
-            const startDate = new Date();
-            startDate.setDate(startDate.getDate() - days);
+            const startDate = days > 0 ? new Date(endDate) : new Date(0); // 0 days means all history
+            
+            if (days > 0) {
+                startDate.setDate(startDate.getDate() - days);
+            }
+
+            console.log(`[LLM] Collecting health data for ${analysisType} analysis from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
             // Fetch health data
             const healthData = await HealthData.find({
                 userId,
                 date: { $gte: startDate, $lte: endDate }
-            }).sort({ date: 1 });
+            }).sort({ date: 1 }).lean() as unknown as HealthDataRecord[];
 
             // Fetch check-ins
             const checkIns = await CheckIn.find({
                 userId,
                 timestamp: { $gte: startDate, $lte: endDate }
-            }).sort({ timestamp: 1 });
+            }).sort({ timestamp: 1 }).lean() as unknown as CheckInRecord[];
+
+            console.log(`[LLM] Collected ${healthData.length} health records and ${checkIns.length} check-ins`);
 
             return {
+                userId,
                 healthData,
                 checkIns,
                 days,
                 startDate,
-                endDate
+                endDate,
+                analysisType
             };
         } catch (error) {
             console.error('[LLM] Error collecting health data:', error);
@@ -522,100 +438,70 @@ class LLMAnalysisService {
     }
 
     /**
+     * Get most recent baseline assessment for a user
+     */
+    private async getBaselineAssessment(userId: Types.ObjectId): Promise<BaselineAssessment | null> {
+        try {
+            // Find the most recent baseline from the new table
+            const baselineDoc = await MentalHealthBaseline.findOne({
+                userId: userId
+            }).sort({ establishedAt: -1 }).lean();
+            
+            if (!baselineDoc) {
+                return null;
+            }
+            
+            // Properly type the baseline document
+            const baselineAssessment = baselineDoc as unknown as IMentalHealthBaseline;
+            
+            // Map the baseline format to match what the analysis expects
+            return {
+                timestamp: baselineAssessment.establishedAt,
+                mentalHealthStatus: baselineAssessment.rawAssessmentData?.mentalHealthStatus || 'stable',
+                confidenceScore: baselineAssessment.confidenceScore,
+                reasoningData: {
+                    sleepHours: baselineAssessment.baselineMetrics?.sleepHours,
+                    sleepQuality: baselineAssessment.baselineMetrics?.sleepQuality,
+                    activityLevel: baselineAssessment.baselineMetrics?.activityLevel,
+                    checkInMood: baselineAssessment.baselineMetrics?.averageMoodScore,
+                    stepsPerDay: baselineAssessment.baselineMetrics?.averageStepsPerDay,
+                    recentExerciseMinutes: baselineAssessment.baselineMetrics?.exerciseMinutesPerWeek ? 
+                        baselineAssessment.baselineMetrics.exerciseMinutesPerWeek * 3 / 7 : undefined // Convert to 3-day estimate
+                }
+            };
+        } catch (error) {
+            console.error('[LLM] Error fetching baseline assessment:', error);
+            return null;
+        }
+    }
+
+    /**
      * Format health data for LLM analysis
      */
-    private formatDataForLLM(data: any): string {
-        const { healthData, checkIns, days, startDate, endDate } = data;
+    private async formatDataForLLM(data: any): Promise<string> {
+        const { userId, healthData, checkIns, startDate, endDate, analysisType } = data;
+        const dayCount = healthData.length > 0 ? 
+            Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
 
-        let prompt = `
-You are a mental health assessment AI specialized in analyzing health data metrics. You have been provided with ${days} days of health and mood data from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
+        let prompt = '';
 
-IMPORTANT NOTE ABOUT MISSING DATA:
-- Missing data points should NOT be interpreted as negative health indicators
-- Missing sleep, activity, or mood data is common and often means the user didn't record data (not that they didn't sleep, exercise, or had a bad day)
-- Only make assessments based on available data points
-- Lower your confidence score when data is sparse
-- If less than 50% of days have data for a particular metric, do not draw strong conclusions about that metric
-
-IMPORTANT NOTE ABOUT ACTIVITY RATINGS:
-Different activity ratings have different implications for mental health:
-- Sleep: High ratings are generally positive (adequate rest), while low ratings may indicate insomnia or sleep deprivation
-- Exercise: High ratings are generally positive (active lifestyle), while low ratings may indicate sedentary behavior
-- Social: High ratings are generally positive (good social connections), while low ratings may indicate isolation or withdrawal
-- Work: High ratings may be concerning (overwork, burnout), while moderate ratings are typically optimal for wellbeing
-
-Health metrics summary:
-`;
-
-        // Format sleep data
-        prompt += "\nSleep data:\n";
-        const sleepData = healthData.filter((day: any) => day.sleep);
-        if (sleepData.length > 0) {
-            sleepData.forEach((day: any) => {
-                const date = day.date.toISOString().split('T')[0];
-                const hours = (day.sleep.durationInSeconds / 3600).toFixed(1);
-                prompt += `- ${date}: ${hours} hours, quality: ${day.sleep.quality || 'not recorded'}\n`;
-            });
+        // Create a prompt based on analysis type
+        if (analysisType === 'baseline') {
+            prompt = this.createBaselinePrompt(healthData, checkIns, dayCount, startDate, endDate);
+        } else if (analysisType === 'recent') {
+            prompt = await this.createRecentAnalysisPrompt(userId, healthData, checkIns, dayCount, startDate, endDate);
         } else {
-            prompt += "No sleep data available.\n";
+            prompt = this.createStandardPrompt(healthData, checkIns, dayCount, startDate, endDate);
         }
 
-        // Format activity data
-        prompt += "\nActivity data:\n";
-        const activityData = healthData.filter((day: any) => day.summary && day.summary.totalSteps > 0);
-        if (activityData.length > 0) {
-            activityData.forEach((day: any) => {
-                const date = day.date.toISOString().split('T')[0];
-                const steps = day.summary.totalSteps;
-                prompt += `- ${date}: ${steps} steps`;
-                if (day.exercises && day.exercises.length > 0) {
-                    prompt += `, ${day.exercises.length} exercise sessions`;
-                    if (day.summary.totalExerciseSeconds) {
-                        prompt += ` (${Math.round(day.summary.totalExerciseSeconds / 60)} minutes)`;
-                    }
-                }
-                prompt += '\n';
-            });
-        } else {
-            prompt += "No activity data available.\n";
-        }
-
-        // Format mood check-ins with activity ratings
-        prompt += "\nMood check-ins and activity ratings:\n";
-        if (checkIns.length > 0) {
-            checkIns.forEach((checkIn: any) => {
-                const date = checkIn.timestamp.toISOString().split('T')[0];
-                prompt += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
-                
-                // Add activity ratings
-                if (checkIn.activities && checkIn.activities.length > 0) {
-                    prompt += ", Activities: [";
-                    prompt += checkIn.activities.map((activity: any) => 
-                        `${activity.type}: ${activity.level}`
-                    ).join(", ");
-                    prompt += "]";
-                }
-                
-                if (checkIn.notes) {
-                    prompt += `, Notes: "${checkIn.notes}"`;
-                }
-                prompt += '\n';
-            });
-        } else {
-            prompt += "No mood check-ins available.\n";
-        }
-
-        // Add assessment instructions
+        // Add assessment instructions (common for all analysis types)
         prompt += `
 Based on this data, please analyze the user's mental health state. Consider the following metrics:
-1. Sleep hours and quality (both from health data and user's own ratings)
-2. Exercise and physical activity level (from health data and user's ratings)
-3. Social activity ratings from check-ins
-4. Work activity ratings from check-ins (note that high work ratings may indicate overwork/burnout)
-5. Mood from check-ins
-6. Any significant changes in patterns
-7. Any risk or protective factors evident in the data
-8. Balance between different life activities (sleep, exercise, social, work)
+1. Sleep hours and quality
+2. Activity level (based on steps and exercise)
+3. Mood from check-ins
+4. Any significant changes in patterns
+5. Any risk or protective factors evident in the data
 
 Provide your assessment in the following JSON format (and only respond with this JSON):
 {
@@ -626,13 +512,6 @@ Provide your assessment in the following JSON format (and only respond with this
     "sleepQuality": "poor|fair|good",
     "activityLevel": "low|moderate|high",
     "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
-    "activityRatings": {
-      "sleep": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
-      "exercise": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
-      "social": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"},
-      "work": {"level": "low|moderate|high", "trend": "increasing|stable|decreasing", "interpretation": "string explaining mental health implications"}
-    },
-    "lifeBalance": "assessment of overall balance between activities",
     "checkInNotes": "summary of relevant notes",
     "recentExerciseMinutes": XXX,
     "stepsPerDay": XXXX,
@@ -658,6 +537,204 @@ Only include fields in reasoningData if you have sufficient information to make 
 `;
 
         return prompt;
+    }
+
+    /**
+     * Create a prompt for baseline analysis
+     */
+    private createBaselinePrompt(
+        healthData: HealthDataRecord[], 
+        checkIns: CheckInRecord[], 
+        dayCount: number, 
+        startDate: Date, 
+        endDate: Date
+    ): string {
+        return `
+You are a mental health assessment AI specialized in establishing mental health baselines. You have been provided with ${healthData.length} health records and ${checkIns.length} mood check-ins from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} (spanning ${dayCount} days).
+
+TASK: ESTABLISH BASELINE ANALYSIS
+This is a BASELINE ANALYSIS which means you are analyzing the user's entire health history to establish their normal patterns. This will be used as a reference point for future analyses.
+
+IMPORTANT NOTE ABOUT BASELINE ANALYSIS:
+- This analysis should focus on establishing patterns rather than identifying acute changes
+- Identify what is "normal" for this user across all health metrics
+- More data points should lead to higher confidence in your baseline assessment
+- Focus on long-term trends rather than recent fluctuations
+
+Health metrics summary:
+${this.formatHealthDataSummary(healthData, checkIns)}
+`;
+    }
+
+    /**
+     * Create a prompt for recent analysis with recency weighting
+     * This version compares against the baseline if available
+     */
+    private async createRecentAnalysisPrompt(
+        userId: Types.ObjectId,
+        healthData: HealthDataRecord[], 
+        checkIns: CheckInRecord[], 
+        dayCount: number, 
+        startDate: Date, 
+        endDate: Date
+    ): Promise<string> {
+        // For recent analysis, we'll focus on the last 3 days with recency weighting
+        // Filter to get only the last 3 days of data
+        const threeDay = new Date(endDate);
+        threeDay.setDate(threeDay.getDate() - 3);
+        
+        const recentHealthData = healthData.filter(day => new Date(day.date) >= threeDay);
+        const recentCheckIns = checkIns.filter(checkIn => new Date(checkIn.timestamp) >= threeDay);
+        
+        // Try to find the most recent baseline assessment for comparison
+        const baselineAssessment = await this.getBaselineAssessment(userId);
+        
+        let baselineInfo = 'No baseline assessment is available for comparison.';
+        
+        if (baselineAssessment) {
+            // Format baseline data for the prompt
+            baselineInfo = `
+BASELINE COMPARISON DATA:
+The user has a baseline assessment from ${new Date(baselineAssessment.timestamp).toISOString().split('T')[0]}.
+
+Baseline metrics:
+- Sleep Quality: ${baselineAssessment.reasoningData.sleepQuality || 'Not available'}
+- Sleep Hours: ${baselineAssessment.reasoningData.sleepHours || 'Not available'}
+- Activity Level: ${baselineAssessment.reasoningData.activityLevel || 'Not available'}
+- Average Steps: ${baselineAssessment.reasoningData.stepsPerDay || 'Not available'} steps per day
+- Average Mood: ${baselineAssessment.reasoningData.checkInMood || 'Not available'} (on 1-5 scale)
+- Exercise Minutes: ${baselineAssessment.reasoningData.recentExerciseMinutes || 'Not available'} minutes
+
+Overall baseline mental health status: ${baselineAssessment.mentalHealthStatus}
+Baseline confidence: ${(baselineAssessment.confidenceScore * 100).toFixed(1)}%
+`;
+        }
+        
+        return `
+You are a mental health assessment AI specialized in detecting recent changes. You have been provided with the most recent 3 days of health data from ${threeDay.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
+
+TASK: RECENT WEIGHTED ANALYSIS WITH BASELINE COMPARISON
+This is a RECENT ANALYSIS which means you should focus on the most recent 3 days of data with RECENCY WEIGHTING, and COMPARE against the user's baseline (if available).
+
+IMPORTANT NOTE ABOUT RECENCY WEIGHTING:
+- Data from today should be weighted approximately 3x more heavily than data from 3 days ago
+- Data from yesterday should be weighted approximately 2x more heavily than data from 3 days ago
+- Recent changes should be considered more significant than historical patterns
+- This analysis is specifically looking for ACUTE changes that might indicate a mental health concern
+
+IMPORTANT NOTE ABOUT BASELINE COMPARISON:
+- Compare recent metrics against the user's baseline whenever possible
+- Highlight significant deviations from baseline
+- Focus on whether the user is trending better or worse than their personal baseline
+- Include baseline deviation in your reasoning
+
+Recent health metrics summary (last 3 days, most recent first):
+${this.formatHealthDataSummary(recentHealthData, recentCheckIns, true)}
+
+${baselineInfo}
+
+Historical context (if available):
+${healthData.length > recentHealthData.length ? 'User has additional historical data available beyond these 3 days' : 'No additional historical data available'}
+`;
+    }
+
+    /**
+     * Create a prompt for standard analysis
+     */
+    private createStandardPrompt(
+        healthData: HealthDataRecord[], 
+        checkIns: CheckInRecord[], 
+        dayCount: number, 
+        startDate: Date, 
+        endDate: Date
+    ): string {
+        return `
+You are a mental health assessment AI specialized in analyzing health data metrics. You have been provided with ${dayCount} days of health and mood data from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
+
+IMPORTANT NOTE ABOUT MISSING DATA:
+- Missing data points should NOT be interpreted as negative health indicators
+- Missing sleep, activity, or mood data is common and often means the user didn't record data (not that they didn't sleep, exercise, or had a bad day)
+- Only make assessments based on available data points
+- Lower your confidence score when data is sparse
+- If less than 50% of days have data for a particular metric, do not draw strong conclusions about that metric
+
+Health metrics summary:
+${this.formatHealthDataSummary(healthData, checkIns)}
+`;
+    }
+
+    /**
+     * Format health data and check-ins into a readable summary
+     * @param healthData Health data records
+     * @param checkIns Check-in records
+     * @param recentFirst Whether to show most recent records first (for recency analysis)
+     */
+    private formatHealthDataSummary(
+        healthData: HealthDataRecord[], 
+        checkIns: CheckInRecord[],
+        recentFirst: boolean = false
+    ): string {
+        let summary = '';
+
+        // Clone and sort arrays if needed
+        const sortedHealthData = [...healthData];
+        const sortedCheckIns = [...checkIns];
+        
+        if (recentFirst) {
+            // Sort by date descending for recency analysis
+            sortedHealthData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            sortedCheckIns.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        }
+
+        // Format sleep data
+        summary += "\nSleep data:\n";
+        const sleepData = sortedHealthData.filter((day: HealthDataRecord) => day.sleep);
+        if (sleepData.length > 0) {
+            sleepData.forEach((day: HealthDataRecord) => {
+                const date = new Date(day.date).toISOString().split('T')[0];
+                const hours = (day.sleep!.durationInSeconds / 3600).toFixed(1);
+                summary += `- ${date}: ${hours} hours, quality: ${day.sleep!.quality || 'not recorded'}\n`;
+            });
+        } else {
+            summary += "No sleep data available.\n";
+        }
+
+        // Format activity data
+        summary += "\nActivity data:\n";
+        const activityData = sortedHealthData.filter((day: HealthDataRecord) => day.summary && day.summary.totalSteps > 0);
+        if (activityData.length > 0) {
+            activityData.forEach((day: HealthDataRecord) => {
+                const date = new Date(day.date).toISOString().split('T')[0];
+                const steps = day.summary!.totalSteps;
+                summary += `- ${date}: ${steps} steps`;
+                if (day.exercises && day.exercises.length > 0) {
+                    summary += `, ${day.exercises.length} exercise sessions`;
+                    if (day.summary!.totalExerciseSeconds) {
+                        summary += ` (${Math.round(day.summary!.totalExerciseSeconds / 60)} minutes)`;
+                    }
+                }
+                summary += '\n';
+            });
+        } else {
+            summary += "No activity data available.\n";
+        }
+
+        // Format mood check-ins
+        summary += "\nMood check-ins:\n";
+        if (sortedCheckIns.length > 0) {
+            sortedCheckIns.forEach((checkIn: CheckInRecord) => {
+                const date = new Date(checkIn.timestamp).toISOString().split('T')[0];
+                summary += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
+                if (checkIn.notes) {
+                    summary += `, Notes: "${checkIn.notes}"`;
+                }
+                summary += '\n';
+            });
+        } else {
+            summary += "No mood check-ins available.\n";
+        }
+
+        return summary;
     }
 
     /**
@@ -692,85 +769,6 @@ Only include fields in reasoningData if you have sufficient information to make 
     }
 
     /**
-     * Analyze life balance across different activity domains
-     */
-    private analyzeLifeBalance(activityRatings: ActivityRatings): { assessment: string, details: string[] } {
-        // Check if we have enough data
-        if (!activityRatings || Object.keys(activityRatings).length < 2) {
-            return {
-                assessment: "Insufficient data to assess life balance",
-                details: []
-            };
-        }
-        
-        // Convert ratings to numeric values
-        const ratingValues = {
-            'low': 1,
-            'moderate': 2,
-            'high': 3
-        };
-        
-        // Define ideal ranges for different activities (simplified model)
-        const idealRanges: Record<string, { min: number, max: number }> = {
-            'sleep': { min: 2, max: 3 },     // moderate to high is ideal
-            'exercise': { min: 2, max: 3 },  // moderate to high is ideal
-            'social': { min: 2, max: 3 },    // moderate to high is ideal
-            'work': { min: 1.5, max: 2.5 }   // moderate is ideal, not too high or low
-        };
-        
-        // Analyze each activity
-        const analysis: string[] = [];
-        let imbalanceCount = 0;
-        
-        for (const [activity, rating] of Object.entries(activityRatings)) {
-            if (!rating || !rating.level) continue;
-            
-            const numericRating = ratingValues[rating.level as 'low' | 'moderate' | 'high'];
-            const ideal = idealRanges[activity];
-            
-            if (!ideal) continue;
-            
-            if (numericRating < ideal.min) {
-                analysis.push(`${activity} is lower than optimal`);
-                imbalanceCount++;
-            } else if (numericRating > ideal.max) {
-                analysis.push(`${activity} is higher than optimal`);
-                imbalanceCount++;
-                
-                // Special case for work being too high
-                if (activity === 'work' && numericRating > 2.5) {
-                    analysis.push("High work levels may be displacing other life activities");
-                }
-            }
-        }
-        
-        // Look for specific imbalance patterns
-        if (activityRatings.work && activityRatings.sleep) {
-            const workRating = ratingValues[activityRatings.work.level];
-            const sleepRating = ratingValues[activityRatings.sleep.level];
-            
-            if (workRating > 2.5 && sleepRating < 2) {
-                analysis.push("Work-sleep imbalance detected: high work correlates with insufficient sleep");
-            }
-        }
-        
-        // Generate overall assessment
-        let overallAssessment = "";
-        if (imbalanceCount === 0) {
-            overallAssessment = "Good overall life balance across activities";
-        } else if (imbalanceCount === 1) {
-            overallAssessment = "Generally balanced with one area needing attention";
-        } else if (imbalanceCount >= 2) {
-            overallAssessment = "Multiple imbalances detected across life activities";
-        }
-        
-        return {
-            assessment: overallAssessment,
-            details: analysis
-        };
-    }
-
-    /**
      * Pre-process the data to help guide the LLM
      */
     private preprocessData(userData: any): LLMResponse {
@@ -780,24 +778,11 @@ Only include fields in reasoningData if you have sufficient information to make 
         const sleepHours = this.calculateAverageSleepHours(healthData);
         const sleepQuality = this.determineSleepQuality(healthData);
         const activityLevel = this.determineActivityLevel(healthData);
-        const activityRatings = this.analyzeActivityRatings(checkIns);
         const checkInMood = this.calculateAverageMood(checkIns);
         const checkInNotes = this.getLatestCheckInNotes(checkIns);
         const recentExerciseMinutes = this.calculateRecentExerciseMinutes(healthData);
         const stepsPerDay = this.calculateAverageSteps(healthData);
         const significantChanges = this.detectSignificantChanges(healthData, checkIns);
-        
-        // Analyze life balance if we have activity ratings
-        let lifeBalance: string | undefined = undefined;
-        if (activityRatings && Object.keys(activityRatings).length > 0) {
-            const balanceAnalysis = this.analyzeLifeBalance(activityRatings);
-            lifeBalance = balanceAnalysis.assessment;
-            
-            // Add important imbalances to significant changes
-            if (balanceAnalysis.details.length > 0) {
-                significantChanges.push(...balanceAnalysis.details);
-            }
-        }
 
         // This is a simplified assessment to help guide the LLM
         // The actual assessment will be done by the LLM
@@ -811,12 +796,6 @@ Only include fields in reasoningData if you have sufficient information to make 
         } else if (significantChanges.length > 2) {
             mentalHealthStatus = 'declining';
         }
-        
-        // Check for work-life imbalance as a risk factor
-        if (activityRatings?.work?.level === 'high' && 
-            (activityRatings?.sleep?.level === 'low' || activityRatings?.social?.level === 'low')) {
-            mentalHealthStatus = 'declining';
-        }
 
         return {
             mentalHealthStatus,
@@ -825,8 +804,6 @@ Only include fields in reasoningData if you have sufficient information to make 
                 sleepHours,
                 sleepQuality,
                 activityLevel,
-                activityRatings,
-                lifeBalance,
                 checkInMood,
                 checkInNotes,
                 recentExerciseMinutes,
@@ -841,20 +818,24 @@ Only include fields in reasoningData if you have sufficient information to make 
     }
 
     /**
-     * Analyze a user's mental health state
+     * Analyze a user's mental health state (standard 14-day analysis)
      */
     public async analyzeMentalHealth(userId: string): Promise<LLMResponse> {
         try {
             console.log(`[LLM] Analyzing mental health for user ${userId}`);
 
             // Collect health data
-            const userData = await this.collectHealthData(new Types.ObjectId(userId));
+            const userData = await this.collectHealthData(
+                new Types.ObjectId(userId),
+                14, // Default 14 days
+                'standard'
+            );
 
             // Pre-process data to get initial metrics
             const preprocessedData = this.preprocessData(userData);
 
             // Format the data for LLM
-            const prompt = this.formatDataForLLM(userData);
+            const prompt = await this.formatDataForLLM(userData);
 
             // Query the LLM
             const llmResponse = await this.queryLLM(prompt);
@@ -866,7 +847,7 @@ Only include fields in reasoningData if you have sufficient information to make 
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
 
             // Save the results to the database
-            await this.saveMentalHealthState(userId, finalResponse);
+            await this.saveMentalHealthState(userId, finalResponse, 'standard');
 
             console.log(`[LLM] Analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}`);
 
@@ -877,6 +858,123 @@ Only include fields in reasoningData if you have sufficient information to make 
         }
     }
 
+    /**
+     * Analyze recent health data (past 3 days) with recency weighting
+     * Compares against baseline if available
+     */
+    public async analyzeRecentHealth(userId: string): Promise<LLMResponse> {
+        try {
+            console.log(`[LLM] Analyzing recent health (3 days) for user ${userId}`);
+
+            // Collect health data for the past 3 days
+            const userData = await this.collectHealthData(
+                new Types.ObjectId(userId),
+                3, // Only 3 days
+                'recent'
+            );
+            
+            // Add userId to userData for baseline comparison
+            userData.userId = new Types.ObjectId(userId);
+
+            // Pre-process data to get initial metrics
+            const preprocessedData = this.preprocessData(userData);
+
+            // Format the data for LLM with recency weighting instructions and baseline comparison
+            const prompt = await this.formatDataForLLM(userData);
+
+            // Query the LLM
+            const llmResponse = await this.queryLLM(prompt);
+
+            // Parse the response
+            const parsedResponse = this.parseLLMResponse(llmResponse);
+
+            // Merge with pre-processed data to ensure completeness
+            const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
+            
+            // Add baseline comparison flag
+            if (!finalResponse.reasoningData.additionalFactors) {
+                finalResponse.reasoningData.additionalFactors = {};
+            }
+            finalResponse.reasoningData.additionalFactors.comparedToBaseline = true;
+
+            // Save the results to the database with analysis type
+            await this.saveMentalHealthState(userId, finalResponse, 'recent');
+
+            console.log(`[LLM] Recent analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}`);
+
+            return finalResponse;
+        } catch (error) {
+            console.error('[LLM] Error analyzing recent health:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Establish a baseline for a user (analyzing all historical data)
+     */
+    public async establishBaseline(userId: string): Promise<LLMResponse> {
+        try {
+            console.log(`[LLM] Establishing baseline for user ${userId}`);
+    
+            // Collect all historical health data
+            const userData = await this.collectHealthData(
+                new Types.ObjectId(userId),
+                0, // 0 means all history
+                'baseline'
+            );
+    
+            // Pre-process data to get initial metrics
+            const preprocessedData = this.preprocessData(userData);
+    
+            // Format the data for LLM with baseline instructions
+            const prompt = await this.formatDataForLLM(userData);
+    
+            // Query the LLM
+            const llmResponse = await this.queryLLM(prompt);
+    
+            // Parse the response
+            const parsedResponse = this.parseLLMResponse(llmResponse);
+    
+            // Merge with pre-processed data to ensure completeness
+            const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
+    
+            // Instead of saving to MentalHealthState, save to the new baseline schema
+            const baseline = new MentalHealthBaseline({
+                userId: new Types.ObjectId(userId),
+                establishedAt: new Date(),
+                baselineMetrics: {
+                    sleepHours: finalResponse.reasoningData.sleepHours,
+                    sleepQuality: finalResponse.reasoningData.sleepQuality,
+                    activityLevel: finalResponse.reasoningData.activityLevel,
+                    averageMoodScore: finalResponse.reasoningData.checkInMood,
+                    averageStepsPerDay: finalResponse.reasoningData.stepsPerDay,
+                    exerciseMinutesPerWeek: finalResponse.reasoningData.recentExerciseMinutes ? 
+                        finalResponse.reasoningData.recentExerciseMinutes * 7 / 3 : undefined, // Convert to weekly
+                    significantPatterns: finalResponse.reasoningData.significantChanges
+                },
+                confidenceScore: finalResponse.confidenceScore,
+                dataPoints: {
+                    totalDays: userData.healthData.length,
+                    daysWithSleepData: userData.healthData.filter((day: HealthDataRecord) => day.sleep).length,
+                    daysWithActivityData: userData.healthData.filter((day: HealthDataRecord) => day.summary && day.summary.totalSteps > 0).length,
+                    checkInsCount: userData.checkIns.length
+                },
+                rawAssessmentData: {
+                    mentalHealthStatus: finalResponse.mentalHealthStatus,
+                    reasoningData: finalResponse.reasoningData
+                }
+            });
+    
+            await baseline.save();
+    
+            console.log(`[LLM] Baseline established for user ${userId}`);
+    
+            return finalResponse;
+        } catch (error) {
+            console.error('[LLM] Error establishing baseline:', error);
+            throw error;
+        }
+    }
     /**
      * Merge the LLM response with pre-processed data to ensure all fields are present
      */
@@ -892,7 +990,6 @@ Only include fields in reasoningData if you have sufficient information to make 
                 sleepHours: llmResponse.reasoningData.sleepHours || preprocessedData.reasoningData.sleepHours,
                 sleepQuality: llmResponse.reasoningData.sleepQuality || preprocessedData.reasoningData.sleepQuality,
                 activityLevel: llmResponse.reasoningData.activityLevel || preprocessedData.reasoningData.activityLevel,
-                activityRatings: llmResponse.reasoningData.activityRatings || preprocessedData.reasoningData.activityRatings,
                 checkInMood: checkInMood, // Use the converted value
                 checkInNotes: llmResponse.reasoningData.checkInNotes || preprocessedData.reasoningData.checkInNotes,
                 recentExerciseMinutes: llmResponse.reasoningData.recentExerciseMinutes || preprocessedData.reasoningData.recentExerciseMinutes,
@@ -910,47 +1007,41 @@ Only include fields in reasoningData if you have sufficient information to make 
     /**
      * Save the mental health state assessment to the database
      */
-    private async saveMentalHealthState(userId: string, analysis: LLMResponse): Promise<IMentalHealthState> {
+    private async saveMentalHealthState(
+        userId: string, 
+        analysis: LLMResponse, 
+        analysisType: AnalysisType = 'standard'
+    ): Promise<IMentalHealthState> {
         try {
+            // Add metadata about the analysis type
+            if (!analysis.reasoningData.additionalFactors) {
+                analysis.reasoningData.additionalFactors = {};
+            }
+            analysis.reasoningData.additionalFactors.analysisType = analysisType;
+    
             const mentalHealthState = new MentalHealthState({
                 userId: new Types.ObjectId(userId),
                 timestamp: new Date(),
                 mentalHealthStatus: analysis.mentalHealthStatus,
                 confidenceScore: analysis.confidenceScore,
                 reasoningData: analysis.reasoningData,
-                needsSupport: analysis.needsSupport,
-                supportRequestStatus: analysis.needsSupport ? 'none' : undefined
+                needsSupport: analysisType === 'baseline' ? false : analysis.needsSupport, // Don't trigger support for baselines
+                supportRequestStatus: (analysisType === 'baseline' || !analysis.needsSupport) ? undefined : 'none',
+                metadata: {
+                    analysisType: analysisType
+                }
             });
-
+    
             await mentalHealthState.save();
-
-            // If support is needed, use the dedicated peer support service
-            if (analysis.needsSupport) {
+    
+            // Only initiate support requests for non-baseline analyses
+            if (analysis.needsSupport && analysisType !== 'baseline') {
                 await peerSupportService.initiateSupportRequest(userId, mentalHealthState._id);
             }
-
+    
             return mentalHealthState;
         } catch (error) {
             console.error('[LLM] Error saving mental health state:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Establish a baseline for a new user
-     */
-    public async establishBaseline(userId: string): Promise<void> {
-        try {
-            console.log(`[LLM] Establishing baseline for user ${userId}`);
-
-            // This would be implemented based on your baseline establishment process
-            // It would involve collecting initial health data and creating a baseline
-            // assessment using a different prompt structure
-
-            // For now, just perform a regular assessment
-            await this.analyzeMentalHealth(userId);
-        } catch (error) {
-            console.error('[LLM] Error establishing baseline:', error);
             throw error;
         }
     }

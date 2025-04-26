@@ -51,7 +51,7 @@ router.get('/assessment', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Trigger a new mental health assessment
+// Trigger a new standard mental health assessment (14-day analysis)
 router.post('/assess', authenticateToken, async (req: any, res) => {
   try {
     // Trigger the LLM analysis
@@ -68,7 +68,8 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
         activityLevel: analysisResult.reasoningData.activityLevel,
         averageMood: analysisResult.reasoningData.checkInMood,
         significantChanges: analysisResult.reasoningData.significantChanges
-      }
+      },
+      analysisType: 'standard'
     };
     
     res.json(response);
@@ -78,10 +79,85 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Trigger a baseline analysis using all historical data
+router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
+  try {
+    // Show a warning if the user doesn't have much data
+    const healthDataCount = await MentalHealthState.countDocuments({
+      userId: new Types.ObjectId(req.userId)
+    });
+
+    // Perform the baseline analysis
+    const analysisResult = await llmAnalysisService.establishBaseline(req.userId);
+    
+    // Format response with special baseline information
+    const response = {
+      message: 'Baseline mental health assessment completed',
+      status: analysisResult.mentalHealthStatus,
+      needsSupport: analysisResult.needsSupport,
+      confidenceScore: analysisResult.confidenceScore,
+      reasoning: {
+        sleepQuality: analysisResult.reasoningData.sleepQuality,
+        activityLevel: analysisResult.reasoningData.activityLevel,
+        averageMood: analysisResult.reasoningData.checkInMood,
+        significantChanges: analysisResult.reasoningData.significantChanges
+      },
+      analysisType: 'baseline',
+      note: healthDataCount < 5 ? 
+        'Limited historical data available. For more accurate baselines, continue recording health data.' : 
+        'Baseline established successfully'
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Baseline assessment error:', error);
+    res.status(500).json({ error: 'Failed to establish mental health baseline' });
+  }
+});
+
+// Trigger a recent analysis (past 3 days with recency weighting)
+router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
+  try {
+    // Trigger the recent analysis
+    const analysisResult = await llmAnalysisService.analyzeRecentHealth(req.userId);
+    
+    // Format response for recent analysis
+    const response = {
+      message: 'Recent mental health assessment completed',
+      status: analysisResult.mentalHealthStatus,
+      needsSupport: analysisResult.needsSupport,
+      confidenceScore: analysisResult.confidenceScore,
+      reasoning: {
+        sleepQuality: analysisResult.reasoningData.sleepQuality,
+        activityLevel: analysisResult.reasoningData.activityLevel,
+        averageMood: analysisResult.reasoningData.checkInMood,
+        significantChanges: analysisResult.reasoningData.significantChanges
+      },
+      analysisType: 'recent',
+      focusPeriod: '3 days'
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Recent assessment error:', error);
+    res.status(500).json({ error: 'Failed to analyze recent mental health data' });
+  }
+});
+
 // Get assessment history
 router.get('/history', authenticateToken, async (req: any, res) => {
   try {
-    const { limit = 10, includeSupportDetails = false } = req.query;
+    const { limit = 10, includeSupportDetails = false, analysisType } = req.query;
+    
+    // Build the query
+    const query: any = {
+      userId: new Types.ObjectId(req.userId)
+    };
+    
+    // Add analysis type filter if specified
+    if (analysisType) {
+      query['metadata.analysisType'] = analysisType;
+    }
     
     // Build the query projection
     let projection: any = {
@@ -92,7 +168,8 @@ router.get('/history', authenticateToken, async (req: any, res) => {
       'reasoningData.sleepQuality': 1,
       'reasoningData.activityLevel': 1,
       'reasoningData.checkInMood': 1,
-      'reasoningData.significantChanges': 1
+      'reasoningData.significantChanges': 1,
+      'metadata.analysisType': 1
     };
     
     if (includeSupportDetails === 'true') {
@@ -105,9 +182,7 @@ router.get('/history', authenticateToken, async (req: any, res) => {
       };
     }
     
-    const assessments = await MentalHealthState.find({
-      userId: new Types.ObjectId(req.userId)
-    })
+    const assessments = await MentalHealthState.find(query)
       .select(projection)
       .sort({ timestamp: -1 })
       .limit(parseInt(limit as string))
@@ -154,6 +229,12 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       high: 0
     };
     
+    const analysisTypeCounts: Record<string, number> = {
+      standard: 0,
+      baseline: 0,
+      recent: 0
+    };
+    
     let totalConfidence = 0;
     let totalMood = 0;
     let moodCount = 0;
@@ -177,6 +258,12 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
         activityLevelCounts[activityLevel]++;
       }
       
+      // Count analysis types
+      const analysisType = assessment.metadata?.analysisType || 'standard';
+      if (analysisTypeCounts[analysisType] !== undefined) {
+        analysisTypeCounts[analysisType]++;
+      }
+      
       // Sum confidence scores
       totalConfidence += assessment.confidenceScore;
       
@@ -192,7 +279,8 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       date: assessment.timestamp,
       status: assessment.mentalHealthStatus,
       confidence: assessment.confidenceScore,
-      mood: assessment.reasoningData?.checkInMood
+      mood: assessment.reasoningData?.checkInMood,
+      analysisType: assessment.metadata?.analysisType || 'standard'
     }));
     
     // Prepare response
@@ -201,6 +289,7 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       statusDistribution: statusCounts,
       sleepQualityDistribution: sleepQualityCounts,
       activityLevelDistribution: activityLevelCounts,
+      analysisTypeDistribution: analysisTypeCounts,
       averageConfidence: assessments.length > 0 ? totalConfidence / assessments.length : 0,
       averageMood: moodCount > 0 ? totalMood / moodCount : 0,
       trends: trendData,
@@ -324,22 +413,22 @@ router.post('/admin/run-daily-analysis', authenticateToken, async (req: any, res
 
 // Admin route to clear all mental health assessments for a user (dev only)
 router.post('/admin/clear-assessments', authenticateToken, async (req: any, res) => {
-    try {
-      // In a real app, add admin role check here
-      
-      // Delete all mental health assessments for this user
-      const result = await MentalHealthState.deleteMany({
-        userId: new Types.ObjectId(req.userId)
-      });
-      
-      res.json({ 
-        message: `Cleared ${result.deletedCount} mental health assessments`,
-        count: result.deletedCount
-      });
-    } catch (error) {
-      console.error('Clear assessments error:', error);
-      res.status(500).json({ error: 'Failed to clear mental health assessments' });
-    }
-  });
+  try {
+    // In a real app, add admin role check here
+    
+    // Delete all mental health assessments for this user
+    const result = await MentalHealthState.deleteMany({
+      userId: new Types.ObjectId(req.userId)
+    });
+    
+    res.json({ 
+      message: `Cleared ${result.deletedCount} mental health assessments`,
+      count: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Clear assessments error:', error);
+    res.status(500).json({ error: 'Failed to clear mental health assessments' });
+  }
+});
 
 export default router;

@@ -10,7 +10,8 @@ import { notificationService } from '@/services/notificationService';
 import { notificationsApi } from '@/services/notificationsApi';
 import * as SecureStore from 'expo-secure-store';
 import SyncHealthDataButton from '@/components/SyncHealthDataButton';
-import TriggerAnalysisButton from '@/components/TriggerAnalysisButton';
+import EstablishBaselineButton from '@/components/EstablishBaselineButton';
+import AnalyzeRecentButton from '@/components/AnalyzeRecentButton';
 import ClearAnalysisButton from '@/components/ClearAnalysisButton';
 
 
@@ -269,8 +270,16 @@ export default function HomeScreen() {
       {/* Health Data Sync Button */}
       <SyncHealthDataButton />
 
-      {/* Mental Health Analysis Button (Dev Only) */}
-      <TriggerAnalysisButton />
+      {/* Mental Health Analysis Buttons (Dev Only) */}
+      <View style={styles.buttonHeaderContainer}>
+        <Text style={styles.buttonHeader}>Mental Health Analysis Options</Text>
+      </View>
+
+      {/* Establish Baseline Button */}
+      <EstablishBaselineButton />
+
+      {/* Analyze Recent Health Button */}
+      <AnalyzeRecentButton />
 
       {/* Clear Mental Health Data Button (Dev Only) */}
       <ClearAnalysisButton />
@@ -395,6 +404,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FF4081',
+  },
+  buttonHeaderContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  buttonHeader: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
   },
   networkCard: {
     backgroundColor: 'white',
