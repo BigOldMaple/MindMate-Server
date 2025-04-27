@@ -106,13 +106,13 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
 // Trigger a baseline analysis using all historical data
 router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
   try {
-    // Check if there's enough data to establish a meaningful baseline
-    const healthDataCount = await MentalHealthState.countDocuments({
-      userId: new Types.ObjectId(req.userId)
-    });
-
     // Perform the baseline analysis
     const analysisResult = await llmAnalysisService.establishBaseline(req.userId);
+    
+    // Fetch the actual saved baseline document to get the accurate dataPoints
+    const savedBaseline = await MentalHealthBaseline.findOne({
+      userId: new Types.ObjectId(req.userId)
+    }).sort({ establishedAt: -1 });
     
     // Format response with special baseline information
     const response = {
@@ -123,16 +123,21 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
         averageMoodScore: analysisResult.reasoningData.checkInMood,
         averageStepsPerDay: analysisResult.reasoningData.stepsPerDay,
         exerciseMinutesPerWeek: analysisResult.reasoningData.recentExerciseMinutes ? 
-          analysisResult.reasoningData.recentExerciseMinutes * 7 / 3 : undefined
+          analysisResult.reasoningData.recentExerciseMinutes * 7 / 3 : undefined,
+        sleepHours: analysisResult.reasoningData.sleepHours
       },
-      dataPoints: {
-        totalDays: healthDataCount
+      dataPoints: savedBaseline?.dataPoints || {
+        totalDays: 0,
+        daysWithSleepData: 0,
+        daysWithActivityData: 0,
+        checkInsCount: 0
       },
       confidenceScore: analysisResult.confidenceScore,
       analysisType: 'baseline',
-      note: healthDataCount < 5 ? 
+      note: (!savedBaseline || savedBaseline.dataPoints.totalDays < 5) ? 
         'Limited historical data available. For more accurate baselines, continue recording health data.' : 
-        'Baseline established successfully'
+        'Baseline established successfully',
+      significantPatterns: savedBaseline?.baselineMetrics?.significantPatterns || []
     };
     
     res.json(response);

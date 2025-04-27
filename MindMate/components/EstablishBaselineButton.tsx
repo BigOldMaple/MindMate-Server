@@ -4,9 +4,12 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { getApiUrl } from '@/services/apiConfig';
 import * as SecureStore from 'expo-secure-store';
+import BaselineResultModal from './BaselineResultsModal';
 
 export default function EstablishBaselineButton() {
     const [isLoading, setIsLoading] = useState(false);
+    const [modalVisible, setModalVisible] = useState(false);
+    const [baselineResult, setBaselineResult] = useState<any>(null);
 
     const establishBaseline = async () => {
         // Show a confirmation dialog first
@@ -47,21 +50,13 @@ export default function EstablishBaselineButton() {
                             }
 
                             const result = await response.json();
-
-                            // Show success message with the result
-                            Alert.alert(
-                                'Baseline Established',
-                                `Your mental health baseline has been successfully established using ${result.dataPoints?.totalDays || 0} days of data.
-                 
-              Baseline metrics:
-              - Sleep Quality: ${result.baselineMetrics?.sleepQuality || 'Not available'}
-              - Activity Level: ${result.baselineMetrics?.activityLevel || 'Not available'}
-              - Average Mood: ${result.baselineMetrics?.averageMoodScore?.toFixed(1) || 'Not available'}/5
-              
-              Data completeness: ${((result.dataPoints?.daysWithSleepData || 0) / (result.dataPoints?.totalDays || 1) * 100).toFixed(0)}% of days had sleep data
-              ${((result.dataPoints?.daysWithActivityData || 0) / (result.dataPoints?.totalDays || 1) * 100).toFixed(0)}% of days had activity data`,
-                                [{ text: 'OK' }]
-                            );
+                            
+                            // Store the result and show modal instead of alert
+                            setBaselineResult(result);
+                            setModalVisible(true);
+                        } catch (error) {
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                            Alert.alert('Error', `Failed to establish baseline: ${errorMessage}`);
                         } finally {
                             setIsLoading(false);
                         }
@@ -71,21 +66,37 @@ export default function EstablishBaselineButton() {
         );
     };
 
+    const handleCloseModal = () => {
+        setModalVisible(false);
+    };
+
     return (
-        <Pressable
-            style={styles.button}
-            onPress={establishBaseline}
-            disabled={isLoading}
-        >
-            {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-                <FontAwesome name="database" size={20} color="#FFFFFF" />
-            )}
-            <Text style={styles.buttonText}>
-                {isLoading ? 'Establishing Baseline...' : 'Establish Mental Health Baseline'}
-            </Text>
-        </Pressable>
+        <>
+            <Pressable
+                style={styles.button}
+                onPress={establishBaseline}
+                disabled={isLoading}
+            >
+                {isLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                    <FontAwesome name="database" size={20} color="#FFFFFF" />
+                )}
+                <Text style={styles.buttonText}>
+                    {isLoading ? 'Establishing Baseline...' : 'Establish Mental Health Baseline'}
+                </Text>
+            </Pressable>
+            
+            {/* Custom modal for displaying baseline results */}
+            <BaselineResultModal
+                visible={modalVisible}
+                onClose={handleCloseModal}
+                baselineMetrics={baselineResult?.baselineMetrics}
+                dataPoints={baselineResult?.dataPoints}
+                significantPatterns={baselineResult?.significantPatterns}
+                confidenceScore={baselineResult?.confidenceScore}
+            />
+        </>
     );
 }
 

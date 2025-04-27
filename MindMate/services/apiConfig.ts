@@ -10,7 +10,7 @@ const isNode = !isBrowser && typeof process !== 'undefined';
 
 // You can set this constant manually or it will be fetched from the server
 // This will be automatically updated when the server starts with ngrok
-const NGROK_URL: string | null = 'https://533c-139-222-246-195.ngrok-free.app';
+const NGROK_URL: string | null = 'https://bbd8-139-222-246-195.ngrok-free.app';
 
 // Function to fetch ngrok URL from server config endpoint
 const fetchNgrokUrl = async (): Promise<{ url: string; wsUrl: string } | null> => {
