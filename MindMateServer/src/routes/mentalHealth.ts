@@ -34,19 +34,19 @@ const authenticateToken = async (req: any, res: any, next: any) => {
 router.get('/assessment', authenticateToken, async (req: any, res) => {
   try {
     // Use find with sort and limit instead of the static method
-    const assessment = await MentalHealthState.findOne({ 
-      userId: new Types.ObjectId(req.userId) 
+    const assessment = await MentalHealthState.findOne({
+      userId: new Types.ObjectId(req.userId)
     })
-    .sort({ timestamp: -1 })
-    .limit(1);
-    
+      .sort({ timestamp: -1 })
+      .limit(1);
+
     if (!assessment) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'No mental health assessment found',
         message: 'Your first assessment will be created soon. Please continue providing health data through check-ins and connected devices.'
       });
     }
-    
+
     res.json(assessment);
   } catch (error) {
     console.error('Get assessment error:', error);
@@ -60,16 +60,16 @@ router.get('/baseline', authenticateToken, async (req: any, res) => {
     const baseline = await MentalHealthBaseline.findOne({
       userId: new Types.ObjectId(req.userId)
     })
-    .sort({ establishedAt: -1 })
-    .limit(1);
-    
+      .sort({ establishedAt: -1 })
+      .limit(1);
+
     if (!baseline) {
       return res.status(404).json({
         error: 'No baseline found',
         message: 'You need to establish a baseline first. Use the "Establish Mental Health Baseline" feature.'
       });
     }
-    
+
     res.json(baseline);
   } catch (error) {
     console.error('Get baseline error:', error);
@@ -82,7 +82,7 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
   try {
     // Trigger the LLM analysis
     const analysisResult = await llmAnalysisService.analyzeMentalHealth(req.userId);
-    
+
     // Format response to include key reasoning data
     const response = {
       message: 'Mental health assessment completed',
@@ -97,7 +97,7 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
       },
       analysisType: 'standard'
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Assessment error:', error);
@@ -109,15 +109,15 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
 router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
   try {
     const includeRawData = req.query.includeRawData === 'true';
-    
+
     // Perform the baseline analysis
     const analysisResult = await llmAnalysisService.establishBaseline(req.userId);
-    
+
     // Fetch the actual saved baseline document to get the accurate dataPoints
     const savedBaseline = await MentalHealthBaseline.findOne({
       userId: new Types.ObjectId(req.userId)
     }).sort({ establishedAt: -1 }).lean() as IMentalHealthBaseline | null;
-    
+
     // Format response with special baseline information
     const response: any = {
       message: 'Baseline mental health assessment completed',
@@ -126,7 +126,7 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
         activityLevel: analysisResult.reasoningData.activityLevel,
         averageMoodScore: analysisResult.reasoningData.checkInMood,
         averageStepsPerDay: analysisResult.reasoningData.stepsPerDay,
-        exerciseMinutesPerWeek: analysisResult.reasoningData.recentExerciseMinutes ? 
+        exerciseMinutesPerWeek: analysisResult.reasoningData.recentExerciseMinutes ?
           analysisResult.reasoningData.recentExerciseMinutes * 7 / 3 : undefined,
         sleepHours: analysisResult.reasoningData.sleepHours
       },
@@ -138,19 +138,19 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
       },
       confidenceScore: analysisResult.confidenceScore,
       analysisType: 'baseline',
-      note: (!savedBaseline || (savedBaseline.dataPoints?.totalDays || 0) < 5) ? 
-        'Limited historical data available. For more accurate baselines, continue recording health data.' : 
+      note: (!savedBaseline || (savedBaseline.dataPoints?.totalDays || 0) < 5) ?
+        'Limited historical data available. For more accurate baselines, continue recording health data.' :
         'Baseline established successfully',
       significantPatterns: savedBaseline?.baselineMetrics?.significantPatterns || []
     };
-    
+
     // If raw data is requested, include it
     if (includeRawData) {
       // Collect raw data that was used for analysis
       const endDate = savedBaseline?.establishedAt || new Date();
       const startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - (savedBaseline?.dataPoints?.totalDays || 30));
-      
+
       // Include the raw data but limit to bare essentials to keep response size manageable
       response.rawData = {
         period: {
@@ -162,14 +162,14 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
           userId: new Types.ObjectId(req.userId),
           date: { $gte: startDate, $lte: endDate }
         }).select('date sleep summary exercises').sort({ date: -1 }).lean(),
-        
+
         checkIns: await CheckIn.find({
           userId: new Types.ObjectId(req.userId),
           timestamp: { $gte: startDate, $lte: endDate }
         }).select('timestamp mood notes activities').sort({ timestamp: -1 }).lean()
       };
     }
-    
+
     res.json(response);
   } catch (error) {
     console.error('Baseline assessment error:', error);
@@ -184,22 +184,22 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
     const baseline = await MentalHealthBaseline.findOne({
       userId: new Types.ObjectId(req.userId)
     })
-    .sort({ establishedAt: -1 })
-    .lean() as IMentalHealthBaseline | null;
-    
+      .sort({ establishedAt: -1 })
+      .lean() as IMentalHealthBaseline | null;
+
     // Trigger the recent analysis
     const analysisResult = await llmAnalysisService.analyzeRecentHealth(req.userId);
-    
+
     // Prepare baseline comparison if available
     let baselineComparison = null;
     if (baseline) {
       baselineComparison = {
         sleepChange: compareMetrics(
-          analysisResult.reasoningData.sleepQuality, 
+          analysisResult.reasoningData.sleepQuality,
           baseline.baselineMetrics?.sleepQuality
         ),
         activityChange: compareMetrics(
-          analysisResult.reasoningData.activityLevel, 
+          analysisResult.reasoningData.activityLevel,
           baseline.baselineMetrics?.activityLevel
         ),
         moodChange: compareMoodScore(
@@ -208,7 +208,7 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
         )
       };
     }
-    
+
     // Format response for recent analysis
     const response = {
       message: 'Recent mental health assessment completed',
@@ -225,7 +225,7 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
       analysisType: 'recent',
       focusPeriod: '3 days'
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Recent assessment error:', error);
@@ -236,21 +236,21 @@ router.post('/analyze-recent', authenticateToken, async (req: any, res) => {
 // Helper function to compare metrics
 function compareMetrics(current: string | undefined, baseline: string | undefined): string | null {
   if (!current || !baseline) return null;
-  
+
   const qualityScale = {
     'poor': 1,
     'fair': 2,
     'good': 3
   };
-  
+
   const activityScale = {
     'low': 1,
     'moderate': 2,
     'high': 3
   };
-  
+
   let currentValue: number, baselineValue: number;
-  
+
   if (current === 'poor' || current === 'fair' || current === 'good') {
     currentValue = qualityScale[current];
     baselineValue = qualityScale[baseline as 'poor' | 'fair' | 'good'];
@@ -258,7 +258,7 @@ function compareMetrics(current: string | undefined, baseline: string | undefine
     currentValue = activityScale[current as 'low' | 'moderate' | 'high'];
     baselineValue = activityScale[baseline as 'low' | 'moderate' | 'high'];
   }
-  
+
   if (currentValue > baselineValue) {
     return 'Improved compared to baseline';
   } else if (currentValue < baselineValue) {
@@ -271,10 +271,10 @@ function compareMetrics(current: string | undefined, baseline: string | undefine
 // Helper function to compare mood scores
 function compareMoodScore(current: number | undefined, baseline: number | undefined): string | null {
   if (!current || !baseline) return null;
-  
+
   const difference = current - baseline;
   const thresholdPct = 0.15; // 15% change threshold
-  
+
   if (Math.abs(difference) < baseline * thresholdPct) {
     return 'Mood consistent with baseline';
   } else if (difference > 0) {
@@ -290,17 +290,17 @@ function compareMoodScore(current: number | undefined, baseline: number | undefi
 router.get('/history', authenticateToken, async (req: any, res) => {
   try {
     const { limit = 10, includeSupportDetails = false, analysisType } = req.query;
-    
+
     // Build the query
     const query: any = {
       userId: new Types.ObjectId(req.userId)
     };
-    
+
     // Add analysis type filter if specified
     if (analysisType) {
       query['metadata.analysisType'] = analysisType;
     }
-    
+
     // Build the query projection
     let projection: any = {
       timestamp: 1,
@@ -313,7 +313,7 @@ router.get('/history', authenticateToken, async (req: any, res) => {
       'reasoningData.significantChanges': 1,
       'metadata.analysisType': 1
     };
-    
+
     if (includeSupportDetails === 'true') {
       projection = {
         ...projection,
@@ -323,13 +323,13 @@ router.get('/history', authenticateToken, async (req: any, res) => {
         supportProvidedTime: 1
       };
     }
-    
+
     const assessments = await MentalHealthState.find(query)
       .select(projection)
       .sort({ timestamp: -1 })
       .limit(parseInt(limit as string))
       .lean();
-    
+
     res.json(assessments);
   } catch (error) {
     console.error('Get assessment history error:', error);
@@ -341,14 +341,14 @@ router.get('/history', authenticateToken, async (req: any, res) => {
 router.get('/baseline/history', authenticateToken, async (req: any, res) => {
   try {
     const { limit = 5 } = req.query;
-    
+
     const baselines = await MentalHealthBaseline.find({
       userId: new Types.ObjectId(req.userId)
     })
-    .sort({ establishedAt: -1 })
-    .limit(parseInt(limit as string))
-    .lean();
-    
+      .sort({ establishedAt: -1 })
+      .limit(parseInt(limit as string))
+      .lean();
+
     res.json(baselines);
   } catch (error) {
     console.error('Get baseline history error:', error);
@@ -356,6 +356,7 @@ router.get('/baseline/history', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Get raw analyzed data used in baseline assessment
 // Get raw analyzed data used in baseline assessment
 router.get('/baseline/analyzed-data', authenticateToken, async (req: any, res) => {
   try {
@@ -379,11 +380,14 @@ router.get('/baseline/analyzed-data', authenticateToken, async (req: any, res) =
       date: { $gte: startDate, $lte: endDate }
     }).sort({ date: -1 }).lean();
     
-    // Fetch check-ins for this date range
+    // Fetch ALL check-ins for this date range without limit
     const checkIns = await CheckIn.find({
       userId: new Types.ObjectId(req.userId),
       timestamp: { $gte: startDate, $lte: endDate }
     }).sort({ timestamp: -1 }).lean();
+    
+    // Debug logging
+    console.log(`[Baseline data] Found ${checkIns.length} check-ins between ${startDate.toISOString()} and ${endDate.toISOString()}`);
     
     res.json({
       analysisType: 'baseline',
@@ -393,7 +397,11 @@ router.get('/baseline/analyzed-data', authenticateToken, async (req: any, res) =
         totalDays: baseline.dataPoints?.totalDays
       },
       healthData,
-      checkIns
+      checkIns,
+      checkInsCount: {
+        displayed: checkIns.length,
+        analyzed: baseline.dataPoints?.checkInsCount || 0
+      }
     });
   } catch (error) {
     console.error('Get baseline analyzed data error:', error);
@@ -409,28 +417,28 @@ router.get('/recent/analyzed-data', authenticateToken, async (req: any, res) => 
       userId: new Types.ObjectId(req.userId),
       'metadata.analysisType': 'recent'
     }).sort({ timestamp: -1 }).lean() as IMentalHealthState | null;
-    
+
     if (!assessment) {
       return res.status(404).json({ error: 'No recent assessment found' });
     }
-    
+
     // Get the date range used for the recent assessment (last 3 days from assessment)
     const endDate = assessment.timestamp;
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - 3); // Recent analysis uses 3 days
-    
+
     // Fetch the health data for this date range
     const healthData = await HealthData.find({
       userId: new Types.ObjectId(req.userId),
       date: { $gte: startDate, $lte: endDate }
     }).sort({ date: -1 }).lean();
-    
+
     // Fetch check-ins for this date range
     const checkIns = await CheckIn.find({
       userId: new Types.ObjectId(req.userId),
       timestamp: { $gte: startDate, $lte: endDate }
-    }).sort({ timestamp: -1 }).lean();
-    
+    }).select('timestamp mood notes activities').sort({ timestamp: -1 }).lean();
+
     res.json({
       analysisType: 'recent',
       period: {
@@ -451,81 +459,81 @@ router.get('/recent/analyzed-data', authenticateToken, async (req: any, res) => 
 router.get('/stats', authenticateToken, async (req: any, res) => {
   try {
     const { days = 30 } = req.query;
-    
+
     // Calculate the start date
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
+
     // Get assessments for the period
     const assessments = await MentalHealthState.find({
       userId: new Types.ObjectId(req.userId),
       timestamp: { $gte: startDate }
     }).sort({ timestamp: 1 });
-    
+
     // Calculate statistics
     const statusCounts: Record<string, number> = {
       stable: 0,
       declining: 0,
       critical: 0
     };
-    
+
     const sleepQualityCounts: Record<string, number> = {
       poor: 0,
       fair: 0,
       good: 0
     };
-    
+
     const activityLevelCounts: Record<string, number> = {
       low: 0,
       moderate: 0,
       high: 0
     };
-    
+
     const analysisTypeCounts: Record<string, number> = {
       standard: 0,
       baseline: 0,
       recent: 0
     };
-    
+
     let totalConfidence = 0;
     let totalMood = 0;
     let moodCount = 0;
-    
+
     assessments.forEach(assessment => {
       // Count statuses
       const status = assessment.mentalHealthStatus;
       if (status && (status === 'stable' || status === 'declining' || status === 'critical')) {
         statusCounts[status]++;
       }
-      
+
       // Count sleep qualities
       const sleepQuality = assessment.reasoningData?.sleepQuality;
       if (sleepQuality && (sleepQuality === 'poor' || sleepQuality === 'fair' || sleepQuality === 'good')) {
         sleepQualityCounts[sleepQuality]++;
       }
-      
+
       // Count activity levels
       const activityLevel = assessment.reasoningData?.activityLevel;
       if (activityLevel && (activityLevel === 'low' || activityLevel === 'moderate' || activityLevel === 'high')) {
         activityLevelCounts[activityLevel]++;
       }
-      
+
       // Count analysis types
       const analysisType = assessment.metadata?.analysisType || 'standard';
       if (analysisTypeCounts[analysisType] !== undefined) {
         analysisTypeCounts[analysisType]++;
       }
-      
+
       // Sum confidence scores
       totalConfidence += assessment.confidenceScore;
-      
+
       // Sum mood scores
       if (assessment.reasoningData?.checkInMood) {
         totalMood += assessment.reasoningData.checkInMood;
         moodCount++;
       }
     });
-    
+
     // Prepare trends data (last 10 assessments)
     const trendData = assessments.slice(-10).map(assessment => ({
       date: assessment.timestamp,
@@ -534,14 +542,14 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
       mood: assessment.reasoningData?.checkInMood,
       analysisType: assessment.metadata?.analysisType || 'standard'
     }));
-    
+
     // Get the latest baseline - use proper type assertion
     const latestBaseline = await MentalHealthBaseline.findOne({
       userId: new Types.ObjectId(req.userId)
     })
-    .sort({ establishedAt: -1 })
-    .lean() as IMentalHealthBaseline | null;
-    
+      .sort({ establishedAt: -1 })
+      .lean() as IMentalHealthBaseline | null;
+
     // Prepare response
     const stats = {
       totalAssessments: assessments.length,
@@ -565,7 +573,7 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
         endDate: new Date()
       }
     };
-    
+
     res.json(stats);
   } catch (error) {
     console.error('Get assessment stats error:', error);
@@ -577,24 +585,24 @@ router.get('/stats', authenticateToken, async (req: any, res) => {
 router.post('/support/:assessmentId', authenticateToken, async (req: any, res) => {
   try {
     const { assessmentId } = req.params;
-    
+
     // Find the assessment
     const assessment = await MentalHealthState.findById(assessmentId);
-    
+
     if (!assessment) {
       throw new ApiError(404, 'Assessment not found');
     }
-    
+
     // Verify that the logged-in user is a buddy peer of the assessment user
     // (This would need a helper function to check buddy peer relationships)
     // For now, we'll skip this check for simplicity
-    
+
     // Update the support status
     assessment.supportRequestStatus = 'supportProvided';
     assessment.supportProvidedBy = new Types.ObjectId(req.userId);
     assessment.supportProvidedTime = new Date();
     await assessment.save();
-    
+
     res.json({
       message: 'Support marked as provided',
       assessment
@@ -613,17 +621,17 @@ router.post('/support/:assessmentId', authenticateToken, async (req: any, res) =
 router.get('/buddy-support-requests', authenticateToken, async (req: any, res) => {
   try {
     const { User } = require('../Database/Schema');
-    
+
     // Get the current user's data
     const currentUser = await User.findById(req.userId);
-    
+
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
     }
-    
+
     // Get IDs of users for whom the current user is a buddy
     const buddyUserIds = currentUser.buddyPeers.map((buddy: any) => buddy.userId);
-    
+
     // Find assessments where those users need support
     const supportRequests = await MentalHealthState.find({
       userId: { $in: buddyUserIds },
@@ -633,7 +641,7 @@ router.get('/buddy-support-requests', authenticateToken, async (req: any, res) =
       .populate('userId', 'username profile.name')
       .sort({ supportRequestTime: 1 })
       .lean();
-    
+
     res.json(supportRequests);
   } catch (error) {
     if (error instanceof ApiError) {
@@ -649,10 +657,10 @@ router.get('/buddy-support-requests', authenticateToken, async (req: any, res) =
 router.post('/admin/establish-baseline/:userId', authenticateToken, async (req: any, res) => {
   try {
     // In a real app, add admin role check here
-    
+
     const { userId } = req.params;
     await llmAnalysisService.establishBaseline(userId);
-    
+
     res.json({ message: 'Baseline establishment triggered' });
   } catch (error) {
     console.error('Establish baseline error:', error);
@@ -664,12 +672,12 @@ router.post('/admin/establish-baseline/:userId', authenticateToken, async (req: 
 router.post('/admin/run-daily-analysis', authenticateToken, async (req: any, res) => {
   try {
     // In a real app, add admin role check here
-    
+
     // Start the analysis in the background
     llmAnalysisService.scheduleDailyAnalysis().catch(error => {
       console.error('Error in scheduled analysis:', error);
     });
-    
+
     res.json({ message: 'Daily analysis started' });
   } catch (error) {
     console.error('Run daily analysis error:', error);
@@ -681,26 +689,25 @@ router.post('/admin/run-daily-analysis', authenticateToken, async (req: any, res
 router.post('/admin/clear-assessments', authenticateToken, async (req: any, res) => {
   try {
     // In a real app, add admin role check here
-    
+
     // Delete all mental health assessments for this user
     const result = await MentalHealthState.deleteMany({
       userId: new Types.ObjectId(req.userId)
     });
-    
+
     // Also clear baselines if requested
     const includeBaselines = req.query.includeBaselines === 'true';
     let baselineResult = { deletedCount: 0 };
-    
+
     if (includeBaselines) {
       baselineResult = await MentalHealthBaseline.deleteMany({
         userId: new Types.ObjectId(req.userId)
       });
     }
-    
-    res.json({ 
-      message: `Cleared ${result.deletedCount} mental health assessments${
-        includeBaselines ? ` and ${baselineResult.deletedCount} baselines` : ''
-      }`,
+
+    res.json({
+      message: `Cleared ${result.deletedCount} mental health assessments${includeBaselines ? ` and ${baselineResult.deletedCount} baselines` : ''
+        }`,
       assessmentCount: result.deletedCount,
       baselineCount: baselineResult.deletedCount
     });

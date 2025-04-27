@@ -252,15 +252,27 @@ class LLMAnalysisService {
      */
     private calculateAverageMood(checkIns: CheckInRecord[]): number | undefined {
         if (checkIns.length === 0) {
-            return undefined;
+          return undefined;
         }
-
+      
+        // Log for debugging
+        console.log('[LLM] Calculating average mood from check-ins:');
+        checkIns.forEach((checkIn, index) => {
+          console.log(`[LLM] Check-in ${index + 1}: score=${checkIn.mood.score}, date=${new Date(checkIn.timestamp).toISOString()}`);
+        });
+      
         const totalMood = checkIns.reduce(
-            (total, checkIn) => total + checkIn.mood.score, 0
+          (total, checkIn) => total + checkIn.mood.score, 0
         );
-
-        return +(totalMood / checkIns.length).toFixed(1);
-    }
+      
+        const average = totalMood / checkIns.length;
+        
+        // Round to 1 decimal place and log the result
+        const roundedAverage = +(average.toFixed(1));
+        console.log(`[LLM] Average mood calculation: ${totalMood} ÷ ${checkIns.length} = ${roundedAverage}`);
+        
+        return roundedAverage;
+      }
 
     /**
      * Extract the latest check-in notes
@@ -393,7 +405,7 @@ class LLMAnalysisService {
      * @param analysisType Type of analysis being performed
      */
     private async collectHealthData(
-        userId: Types.ObjectId, 
+        userId: Types.ObjectId,
         days: number = 14,
         analysisType: AnalysisType = 'standard'
     ): Promise<any> {
@@ -401,7 +413,7 @@ class LLMAnalysisService {
             // Get the date range for the query
             const endDate = new Date();
             const startDate = days > 0 ? new Date(endDate) : new Date(0); // 0 days means all history
-            
+
             if (days > 0) {
                 startDate.setDate(startDate.getDate() - days);
             }
@@ -446,14 +458,14 @@ class LLMAnalysisService {
             const baselineDoc = await MentalHealthBaseline.findOne({
                 userId: userId
             }).sort({ establishedAt: -1 }).lean();
-            
+
             if (!baselineDoc) {
                 return null;
             }
-            
+
             // Properly type the baseline document
             const baselineAssessment = baselineDoc as unknown as IMentalHealthBaseline;
-            
+
             // Map the baseline format to match what the analysis expects
             return {
                 timestamp: baselineAssessment.establishedAt,
@@ -465,7 +477,7 @@ class LLMAnalysisService {
                     activityLevel: baselineAssessment.baselineMetrics?.activityLevel,
                     checkInMood: baselineAssessment.baselineMetrics?.averageMoodScore,
                     stepsPerDay: baselineAssessment.baselineMetrics?.averageStepsPerDay,
-                    recentExerciseMinutes: baselineAssessment.baselineMetrics?.exerciseMinutesPerWeek ? 
+                    recentExerciseMinutes: baselineAssessment.baselineMetrics?.exerciseMinutesPerWeek ?
                         baselineAssessment.baselineMetrics.exerciseMinutesPerWeek * 3 / 7 : undefined // Convert to 3-day estimate
                 }
             };
@@ -480,7 +492,7 @@ class LLMAnalysisService {
      */
     private async formatDataForLLM(data: any): Promise<string> {
         const { userId, healthData, checkIns, startDate, endDate, analysisType } = data;
-        const dayCount = healthData.length > 0 ? 
+        const dayCount = healthData.length > 0 ?
             Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
 
         let prompt = '';
@@ -543,10 +555,10 @@ Only include fields in reasoningData if you have sufficient information to make 
      * Create a prompt for baseline analysis
      */
     private createBaselinePrompt(
-        healthData: HealthDataRecord[], 
-        checkIns: CheckInRecord[], 
-        dayCount: number, 
-        startDate: Date, 
+        healthData: HealthDataRecord[],
+        checkIns: CheckInRecord[],
+        dayCount: number,
+        startDate: Date,
         endDate: Date
     ): string {
         return `
@@ -572,25 +584,25 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
      */
     private async createRecentAnalysisPrompt(
         userId: Types.ObjectId,
-        healthData: HealthDataRecord[], 
-        checkIns: CheckInRecord[], 
-        dayCount: number, 
-        startDate: Date, 
+        healthData: HealthDataRecord[],
+        checkIns: CheckInRecord[],
+        dayCount: number,
+        startDate: Date,
         endDate: Date
     ): Promise<string> {
         // For recent analysis, we'll focus on the last 3 days with recency weighting
         // Filter to get only the last 3 days of data
         const threeDay = new Date(endDate);
         threeDay.setDate(threeDay.getDate() - 3);
-        
+
         const recentHealthData = healthData.filter(day => new Date(day.date) >= threeDay);
         const recentCheckIns = checkIns.filter(checkIn => new Date(checkIn.timestamp) >= threeDay);
-        
+
         // Try to find the most recent baseline assessment for comparison
         const baselineAssessment = await this.getBaselineAssessment(userId);
-        
+
         let baselineInfo = 'No baseline assessment is available for comparison.';
-        
+
         if (baselineAssessment) {
             // Format baseline data for the prompt
             baselineInfo = `
@@ -609,7 +621,7 @@ Overall baseline mental health status: ${baselineAssessment.mentalHealthStatus}
 Baseline confidence: ${(baselineAssessment.confidenceScore * 100).toFixed(1)}%
 `;
         }
-        
+
         return `
 You are a mental health assessment AI specialized in detecting recent changes. You have been provided with the most recent 3 days of health data from ${threeDay.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
 
@@ -642,10 +654,10 @@ ${healthData.length > recentHealthData.length ? 'User has additional historical 
      * Create a prompt for standard analysis
      */
     private createStandardPrompt(
-        healthData: HealthDataRecord[], 
-        checkIns: CheckInRecord[], 
-        dayCount: number, 
-        startDate: Date, 
+        healthData: HealthDataRecord[],
+        checkIns: CheckInRecord[],
+        dayCount: number,
+        startDate: Date,
         endDate: Date
     ): string {
         return `
@@ -670,7 +682,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
      * @param recentFirst Whether to show most recent records first (for recency analysis)
      */
     private formatHealthDataSummary(
-        healthData: HealthDataRecord[], 
+        healthData: HealthDataRecord[],
         checkIns: CheckInRecord[],
         recentFirst: boolean = false
     ): string {
@@ -679,7 +691,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
         // Clone and sort arrays if needed
         const sortedHealthData = [...healthData];
         const sortedCheckIns = [...checkIns];
-        
+
         if (recentFirst) {
             // Sort by date descending for recency analysis
             sortedHealthData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -872,7 +884,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                 3, // Only 3 days
                 'recent'
             );
-            
+
             // Add userId to userData for baseline comparison
             userData.userId = new Types.ObjectId(userId);
 
@@ -890,7 +902,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
 
             // Merge with pre-processed data to ensure completeness
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
-            
+
             // Add baseline comparison flag
             if (!finalResponse.reasoningData.additionalFactors) {
                 finalResponse.reasoningData.additionalFactors = {};
@@ -915,29 +927,29 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
     public async establishBaseline(userId: string): Promise<LLMResponse> {
         try {
             console.log(`[LLM] Establishing baseline for user ${userId}`);
-    
+
             // Collect all historical health data
             const userData = await this.collectHealthData(
                 new Types.ObjectId(userId),
                 0, // 0 means all history
                 'baseline'
             );
-    
+
             // Pre-process data to get initial metrics
             const preprocessedData = this.preprocessData(userData);
-    
+
             // Format the data for LLM with baseline instructions
             const prompt = await this.formatDataForLLM(userData);
-    
+
             // Query the LLM
             const llmResponse = await this.queryLLM(prompt);
-    
+
             // Parse the response
             const parsedResponse = this.parseLLMResponse(llmResponse);
-    
+
             // Merge with pre-processed data to ensure completeness
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
-    
+
             // Instead of saving to MentalHealthState, save to the new baseline schema
             const baseline = new MentalHealthBaseline({
                 userId: new Types.ObjectId(userId),
@@ -948,7 +960,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                     activityLevel: finalResponse.reasoningData.activityLevel,
                     averageMoodScore: finalResponse.reasoningData.checkInMood,
                     averageStepsPerDay: finalResponse.reasoningData.stepsPerDay,
-                    exerciseMinutesPerWeek: finalResponse.reasoningData.recentExerciseMinutes ? 
+                    exerciseMinutesPerWeek: finalResponse.reasoningData.recentExerciseMinutes ?
                         finalResponse.reasoningData.recentExerciseMinutes * 7 / 3 : undefined, // Convert to weekly
                     significantPatterns: finalResponse.reasoningData.significantChanges
                 },
@@ -964,11 +976,11 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                     reasoningData: finalResponse.reasoningData
                 }
             });
-    
+
             await baseline.save();
-    
+
             console.log(`[LLM] Baseline established for user ${userId}`);
-    
+
             return finalResponse;
         } catch (error) {
             console.error('[LLM] Error establishing baseline:', error);
@@ -1008,8 +1020,8 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
      * Save the mental health state assessment to the database
      */
     private async saveMentalHealthState(
-        userId: string, 
-        analysis: LLMResponse, 
+        userId: string,
+        analysis: LLMResponse,
         analysisType: AnalysisType = 'standard'
     ): Promise<IMentalHealthState> {
         try {
@@ -1018,7 +1030,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                 analysis.reasoningData.additionalFactors = {};
             }
             analysis.reasoningData.additionalFactors.analysisType = analysisType;
-    
+
             const mentalHealthState = new MentalHealthState({
                 userId: new Types.ObjectId(userId),
                 timestamp: new Date(),
@@ -1031,14 +1043,14 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                     analysisType: analysisType
                 }
             });
-    
+
             await mentalHealthState.save();
-    
+
             // Only initiate support requests for non-baseline analyses
             if (analysis.needsSupport && analysisType !== 'baseline') {
                 await peerSupportService.initiateSupportRequest(userId, mentalHealthState._id);
             }
-    
+
             return mentalHealthState;
         } catch (error) {
             console.error('[LLM] Error saving mental health state:', error);

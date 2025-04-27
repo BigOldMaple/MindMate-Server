@@ -14,15 +14,33 @@ export default function AnalyzedDataScreen() {
   const [healthData, setHealthData] = useState<any[]>([]);
   const [checkIns, setCheckIns] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'health' | 'checkIns'>('health');
 
   useEffect(() => {
     fetchAnalyzedData();
   }, []);
 
+  // Check for data discrepancies after data is loaded
+  useEffect(() => {
+    if (!isLoading && !error) {
+      // Check for discrepancy in check-in counts
+      const analyzedCount = dataCount.checkIns || 0;
+      const displayedCount = checkIns.length;
+      
+      if (analyzedCount > displayedCount) {
+        // Add a warning that not all analyzed check-ins are displayed
+        setWarning(`Note: Only ${displayedCount} of ${analyzedCount} check-ins are shown. Some historical check-ins may not be visible.`);
+      }
+    }
+  }, [isLoading, checkIns, dataCount]);
+
   const fetchAnalyzedData = async () => {
     try {
       setIsLoading(true);
+      setError(null);
+      setWarning(null);
+      
       const token = await SecureStore.getItemAsync('userToken');
       
       if (!token) {
@@ -51,6 +69,15 @@ export default function AnalyzedDataScreen() {
       const data = await response.json();
       setHealthData(data.healthData || []);
       setCheckIns(data.checkIns || []);
+      
+      // If the response includes check-ins count info, compare it
+      if (data.checkInsCount) {
+        const { displayed, analyzed } = data.checkInsCount;
+        if (analyzed > displayed) {
+          setWarning(`Note: Only ${displayed} of ${analyzed} check-ins are shown. Some historical check-ins may not be visible.`);
+        }
+      }
+      
       setIsLoading(false);
     } catch (err) {
       console.error('Error fetching analyzed data:', err);
@@ -122,7 +149,7 @@ export default function AnalyzedDataScreen() {
     if (checkIns.length === 0) {
       return <Text style={styles.noDataText}>No check-in data available</Text>;
     }
-
+  
     return (
       <ScrollView style={styles.dataContainer}>
         {checkIns.map((checkIn, index) => (
@@ -171,6 +198,12 @@ export default function AnalyzedDataScreen() {
               : 'Most recent health and check-in data'}
           </Text>
         </View>
+        
+        {warning && (
+          <View style={styles.warningContainer}>
+            <Text style={styles.warningText}>{warning}</Text>
+          </View>
+        )}
         
         <View style={styles.tabContainer}>
           <TouchableOpacity 
@@ -237,11 +270,29 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
+  warningContainer: {
+    backgroundColor: '#FFF9C4',
+    borderColor: '#FBC02D',
+    borderWidth: 1,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 0,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  warningText: {
+    color: '#F57F17',
+    textAlign: 'center',
+    fontSize: 14,
+  },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    marginTop: 8,
   },
   tab: {
     flex: 1,
@@ -340,16 +391,24 @@ const styles = StyleSheet.create({
     borderTopColor: '#E0E0E0',
   },
   notesContainer: {
-    marginTop: 4,
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: '#F0F8FF', // Light blue background
+    borderRadius: 6,
+    borderLeftWidth: 3,
+    borderLeftColor: '#1976D2',
   },
   notesHeader: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginBottom: 4,
+    color: '#1976D2',
   },
   notesText: {
     fontSize: 14,
     fontStyle: 'italic',
-    color: '#555',
+    color: '#333',
+    lineHeight: 20,
   },
   noDataText: {
     fontSize: 16,
