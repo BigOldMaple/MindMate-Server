@@ -6,6 +6,8 @@ import { llmAnalysisService } from '../services/llmAnalysisService';
 import { auth } from '../services/auth';
 import { ApiError } from '../middleware/error';
 import { Types } from 'mongoose';
+import { HealthData } from '../Database/HealthDataSchema';
+import { CheckIn } from '../Database/CheckInSchema';
 
 const router = express.Router();
 
@@ -106,16 +108,18 @@ router.post('/assess', authenticateToken, async (req: any, res) => {
 // Trigger a baseline analysis using all historical data
 router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
   try {
+    const includeRawData = req.query.includeRawData === 'true';
+    
     // Perform the baseline analysis
     const analysisResult = await llmAnalysisService.establishBaseline(req.userId);
     
     // Fetch the actual saved baseline document to get the accurate dataPoints
     const savedBaseline = await MentalHealthBaseline.findOne({
       userId: new Types.ObjectId(req.userId)
-    }).sort({ establishedAt: -1 });
+    }).sort({ establishedAt: -1 }).lean() as IMentalHealthBaseline | null;
     
     // Format response with special baseline information
-    const response = {
+    const response: any = {
       message: 'Baseline mental health assessment completed',
       baselineMetrics: {
         sleepQuality: analysisResult.reasoningData.sleepQuality,
@@ -134,11 +138,37 @@ router.post('/establish-baseline', authenticateToken, async (req: any, res) => {
       },
       confidenceScore: analysisResult.confidenceScore,
       analysisType: 'baseline',
-      note: (!savedBaseline || savedBaseline.dataPoints.totalDays < 5) ? 
+      note: (!savedBaseline || (savedBaseline.dataPoints?.totalDays || 0) < 5) ? 
         'Limited historical data available. For more accurate baselines, continue recording health data.' : 
         'Baseline established successfully',
       significantPatterns: savedBaseline?.baselineMetrics?.significantPatterns || []
     };
+    
+    // If raw data is requested, include it
+    if (includeRawData) {
+      // Collect raw data that was used for analysis
+      const endDate = savedBaseline?.establishedAt || new Date();
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - (savedBaseline?.dataPoints?.totalDays || 30));
+      
+      // Include the raw data but limit to bare essentials to keep response size manageable
+      response.rawData = {
+        period: {
+          startDate,
+          endDate,
+          totalDays: savedBaseline?.dataPoints?.totalDays
+        },
+        healthData: await HealthData.find({
+          userId: new Types.ObjectId(req.userId),
+          date: { $gte: startDate, $lte: endDate }
+        }).select('date sleep summary exercises').sort({ date: -1 }).lean(),
+        
+        checkIns: await CheckIn.find({
+          userId: new Types.ObjectId(req.userId),
+          timestamp: { $gte: startDate, $lte: endDate }
+        }).select('timestamp mood notes activities').sort({ timestamp: -1 }).lean()
+      };
+    }
     
     res.json(response);
   } catch (error) {
@@ -323,6 +353,97 @@ router.get('/baseline/history', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Get baseline history error:', error);
     res.status(500).json({ error: 'Failed to fetch baseline history' });
+  }
+});
+
+// Get raw analyzed data used in baseline assessment
+router.get('/baseline/analyzed-data', authenticateToken, async (req: any, res) => {
+  try {
+    // Find the most recent baseline
+    const baseline = await MentalHealthBaseline.findOne({
+      userId: new Types.ObjectId(req.userId)
+    }).sort({ establishedAt: -1 }).lean() as IMentalHealthBaseline | null;
+    
+    if (!baseline) {
+      return res.status(404).json({ error: 'No baseline found' });
+    }
+    
+    // Get the date range used for the baseline
+    const endDate = baseline.establishedAt;
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - (baseline.dataPoints?.totalDays || 30)); // Use recorded days or default to 30
+    
+    // Fetch the health data for this date range
+    const healthData = await HealthData.find({
+      userId: new Types.ObjectId(req.userId),
+      date: { $gte: startDate, $lte: endDate }
+    }).sort({ date: -1 }).lean();
+    
+    // Fetch check-ins for this date range
+    const checkIns = await CheckIn.find({
+      userId: new Types.ObjectId(req.userId),
+      timestamp: { $gte: startDate, $lte: endDate }
+    }).sort({ timestamp: -1 }).lean();
+    
+    res.json({
+      analysisType: 'baseline',
+      period: {
+        startDate,
+        endDate,
+        totalDays: baseline.dataPoints?.totalDays
+      },
+      healthData,
+      checkIns
+    });
+  } catch (error) {
+    console.error('Get baseline analyzed data error:', error);
+    res.status(500).json({ error: 'Failed to fetch baseline analyzed data' });
+  }
+});
+
+// Get raw analyzed data used in recent assessment
+router.get('/recent/analyzed-data', authenticateToken, async (req: any, res) => {
+  try {
+    // Find the most recent assessment
+    const assessment = await MentalHealthState.findOne({
+      userId: new Types.ObjectId(req.userId),
+      'metadata.analysisType': 'recent'
+    }).sort({ timestamp: -1 }).lean() as IMentalHealthState | null;
+    
+    if (!assessment) {
+      return res.status(404).json({ error: 'No recent assessment found' });
+    }
+    
+    // Get the date range used for the recent assessment (last 3 days from assessment)
+    const endDate = assessment.timestamp;
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 3); // Recent analysis uses 3 days
+    
+    // Fetch the health data for this date range
+    const healthData = await HealthData.find({
+      userId: new Types.ObjectId(req.userId),
+      date: { $gte: startDate, $lte: endDate }
+    }).sort({ date: -1 }).lean();
+    
+    // Fetch check-ins for this date range
+    const checkIns = await CheckIn.find({
+      userId: new Types.ObjectId(req.userId),
+      timestamp: { $gte: startDate, $lte: endDate }
+    }).sort({ timestamp: -1 }).lean();
+    
+    res.json({
+      analysisType: 'recent',
+      period: {
+        startDate,
+        endDate,
+        totalDays: 3
+      },
+      healthData,
+      checkIns
+    });
+  } catch (error) {
+    console.error('Get recent analyzed data error:', error);
+    res.status(500).json({ error: 'Failed to fetch recent analyzed data' });
   }
 });
 

@@ -36,7 +36,7 @@ export default function EstablishBaselineButton() {
                             }
 
                             // Call the baseline establishment endpoint
-                            const response = await fetch(`${getApiUrl()}/mental-health/establish-baseline`, {
+                            const response = await fetch(`${getApiUrl()}/mental-health/establish-baseline?includeRawData=true`, {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',
@@ -95,6 +95,7 @@ export default function EstablishBaselineButton() {
                 dataPoints={baselineResult?.dataPoints}
                 significantPatterns={baselineResult?.significantPatterns}
                 confidenceScore={baselineResult?.confidenceScore}
+                rawData={baselineResult?.rawData}
             />
         </>
     );

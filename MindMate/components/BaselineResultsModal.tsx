@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { router } from 'expo-router';
 
 interface BaselineMetrics {
   sleepQuality?: string;
@@ -24,6 +25,10 @@ interface BaselineResultModalProps {
   dataPoints?: DataPoints;
   significantPatterns?: string[];
   confidenceScore?: number;
+  rawData?: {
+    healthData?: any[];
+    checkIns?: any[];
+  };
 }
 
 const BaselineResultModal: React.FC<BaselineResultModalProps> = ({
@@ -32,8 +37,27 @@ const BaselineResultModal: React.FC<BaselineResultModalProps> = ({
   baselineMetrics,
   dataPoints,
   significantPatterns,
-  confidenceScore
+  confidenceScore,
+  rawData
 }) => {
+
+    const navigateToAnalyzedData = () => {
+        // Store rawData in localStorage or use router.setParams to pass it
+        if (rawData) {
+          router.push({
+            pathname: '/home/analyzed-data',
+            params: { 
+              source: 'baseline',
+              // Convert the object to a JSON string since router params must be strings or numbers
+              dataCount: JSON.stringify({
+                healthRecords: rawData.healthData?.length || 0,
+                checkIns: rawData.checkIns?.length || 0
+              })
+            }
+          });
+        }
+        onClose(); // Close the modal when navigating
+      };
   return (
     <Modal
       animationType="fade"
@@ -124,9 +148,18 @@ const BaselineResultModal: React.FC<BaselineResultModalProps> = ({
             </View>
           </ScrollView>
           
-          <TouchableOpacity style={styles.button} onPress={onClose}>
-            <Text style={styles.buttonText}>OK</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={styles.dataButton} 
+              onPress={navigateToAnalyzedData}
+            >
+              <Text style={styles.dataButtonText}>View Analyzed Data</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.button} onPress={onClose}>
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -222,12 +255,29 @@ const styles = StyleSheet.create({
     marginLeft: 5,
     color: '#1976D2',
   },
+  buttonContainer: {
+    flexDirection: 'column',
+    marginTop: 15,
+    gap: 10,
+  },
+  dataButton: {
+    backgroundColor: '#F5F9FF',
+    borderWidth: 1,
+    borderColor: '#1976D2',
+    borderRadius: 10,
+    padding: 12,
+  },
+  dataButtonText: {
+    color: '#1976D2',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: 15,
+  },
   button: {
     backgroundColor: '#1976D2',
     borderRadius: 10,
     padding: 12,
     elevation: 2,
-    marginTop: 15,
   },
   buttonText: {
     color: 'white',
