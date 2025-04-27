@@ -49,6 +49,7 @@ interface CheckInRecord {
     mood: {
         score: number;
         label: string;
+        description?: string;
     };
     notes?: string;
     [key: string]: any;
@@ -281,16 +282,26 @@ class LLMAnalysisService {
         if (checkIns.length === 0) {
             return undefined;
         }
-
+    
         // Sort by timestamp descending
         const sortedCheckIns = [...checkIns].sort(
             (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
         );
-
-        // Get the latest check-in with notes
-        const latestWithNotes = sortedCheckIns.find(checkIn => checkIn.notes && checkIn.notes.trim() !== '');
-
-        return latestWithNotes?.notes;
+    
+        // Look for notes in both the notes field and mood.description field
+        for (const checkIn of sortedCheckIns) {
+            // First check the notes field
+            if (checkIn.notes && checkIn.notes.trim() !== '') {
+                return checkIn.notes;
+            }
+            
+            // Then check the mood.description field
+            if (checkIn.mood && checkIn.mood.description && checkIn.mood.description.trim() !== '') {
+                return checkIn.mood.description;
+            }
+        }
+    
+        return undefined;
     }
 
     /**
@@ -737,15 +748,19 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             sortedCheckIns.forEach((checkIn: CheckInRecord) => {
                 const date = new Date(checkIn.timestamp).toISOString().split('T')[0];
                 summary += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
-                if (checkIn.notes) {
-                    summary += `, Notes: "${checkIn.notes}"`;
+                
+                // Include both notes field and mood.description field if available
+                const noteText = checkIn.notes || checkIn.mood.description;
+                if (noteText) {
+                    summary += `, Notes: "${noteText}"`;
                 }
+                
                 summary += '\n';
             });
         } else {
             summary += "No mood check-ins available.\n";
         }
-
+    
         return summary;
     }
 
@@ -785,16 +800,17 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
      */
     private preprocessData(userData: any): LLMResponse {
         const { healthData, checkIns } = userData;
-
+    
         // Calculate pre-processed metrics to help guide the LLM
         const sleepHours = this.calculateAverageSleepHours(healthData);
         const sleepQuality = this.determineSleepQuality(healthData);
         const activityLevel = this.determineActivityLevel(healthData);
         const checkInMood = this.calculateAverageMood(checkIns);
-        const checkInNotes = this.getLatestCheckInNotes(checkIns);
+        const checkInNotes = this.getLatestCheckInNotes(checkIns); 
         const recentExerciseMinutes = this.calculateRecentExerciseMinutes(healthData);
         const stepsPerDay = this.calculateAverageSteps(healthData);
         const significantChanges = this.detectSignificantChanges(healthData, checkIns);
+    
 
         // This is a simplified assessment to help guide the LLM
         // The actual assessment will be done by the LLM

@@ -5,14 +5,88 @@ import { getApiUrl } from '@/services/apiConfig';
 import * as SecureStore from 'expo-secure-store';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
+// Type definitions
+interface CheckInActivity {
+  type: string;
+  level: 'low' | 'moderate' | 'high';
+}
+
+interface CheckInMood {
+  score: number;
+  label: string;
+  description?: string;
+}
+
+interface CheckIn {
+  _id: string;
+  timestamp: string;
+  mood: CheckInMood;
+  notes?: string;
+  activities?: CheckInActivity[];
+}
+
+interface HealthDataExercise {
+  type: string;
+  startTime: string;
+  endTime: string;
+  durationInSeconds: number;
+  calories?: number;
+  distance?: {
+    inMeters?: number;
+    inKilometers?: number;
+  };
+  dataSource?: string;
+  _id?: string;
+}
+
+interface HealthDataSummary {
+  totalSteps?: number;
+  totalDistanceMeters?: number;
+  totalSleepSeconds?: number;
+  totalExerciseSeconds?: number;
+  exerciseCount?: number;
+}
+
+interface HealthDataSleep {
+  startTime: string;
+  endTime: string;
+  durationInSeconds: number;
+  quality?: 'poor' | 'fair' | 'good';
+  dataSource?: string;
+}
+
+interface HealthData {
+  _id: string;
+  date: string;
+  sleep?: HealthDataSleep;
+  exercises?: HealthDataExercise[];
+  summary?: HealthDataSummary;
+}
+
+interface AnalyzedData {
+  analysisType: 'baseline' | 'recent' | 'standard';
+  period: {
+    startDate: string;
+    endDate: string;
+    totalDays?: number;
+  };
+  healthData: HealthData[];
+  checkIns: CheckIn[];
+  checkInsCount?: {
+    displayed: number;
+    analyzed: number;
+  };
+}
+
 export default function AnalyzedDataScreen() {
+  // Don't specify generic type for useLocalSearchParams to avoid Route constraint error
   const params = useLocalSearchParams();
   const source = params.source as string;
   const dataCount = params.dataCount ? JSON.parse(params.dataCount as string) : {};
   
   const [isLoading, setIsLoading] = useState(true);
-  const [healthData, setHealthData] = useState<any[]>([]);
-  const [checkIns, setCheckIns] = useState<any[]>([]);
+  const [healthData, setHealthData] = useState<HealthData[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'health' | 'checkIns'>('health');
@@ -95,50 +169,64 @@ export default function AnalyzedDataScreen() {
     if (healthData.length === 0) {
       return <Text style={styles.noDataText}>No health data available</Text>;
     }
-
+  
     return (
       <ScrollView style={styles.dataContainer}>
         {healthData.map((item, index) => (
           <View key={index} style={styles.dataItem}>
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>
             
-            {item.sleep && (
+            {item.sleep ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Sleep</Text>
                 <Text>Duration: {(item.sleep.durationInSeconds / 3600).toFixed(1)} hours</Text>
                 <Text>Quality: {item.sleep.quality || 'Not recorded'}</Text>
-                {item.sleep.startTime && item.sleep.endTime && (
+                {item.sleep.startTime && item.sleep.endTime ? (
                   <Text>
                     Time: {new Date(item.sleep.startTime).toLocaleTimeString()} - {new Date(item.sleep.endTime).toLocaleTimeString()}
                   </Text>
-                )}
+                ) : null}
               </View>
-            )}
+            ) : null}
             
-            {item.summary && (
+            {item.summary ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Activity</Text>
-                {item.summary.totalSteps > 0 && (
+                {item.summary.totalSteps && item.summary.totalSteps > 0 ? (
                   <Text>Steps: {item.summary.totalSteps.toLocaleString()}</Text>
-                )}
-                {item.summary.totalExerciseSeconds > 0 && (
+                ) : null}
+                {item.summary.totalExerciseSeconds && item.summary.totalExerciseSeconds > 0 ? (
                   <Text>Exercise: {Math.round(item.summary.totalExerciseSeconds / 60)} minutes</Text>
-                )}
+                ) : null}
+                {/* Add a fallback text if no activity data exists */}
+                {(!item.summary.totalSteps || item.summary.totalSteps <= 0) && 
+                 (!item.summary.totalExerciseSeconds || item.summary.totalExerciseSeconds <= 0) ? (
+                  <Text>No activity data recorded</Text>
+                ) : null}
               </View>
-            )}
+            ) : null}
             
-            {item.exercises && item.exercises.length > 0 && (
+            {item.exercises && item.exercises.length > 0 ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Exercise Sessions</Text>
-                {item.exercises.map((exercise: any, exIndex: number) => (
+                {item.exercises.map((exercise, exIndex) => (
                   <View key={exIndex} style={styles.exerciseItem}>
-                    <Text>Type: {exercise.type}</Text>
+                    <Text>Type: {exercise.type || 'Unknown'}</Text>
                     <Text>Duration: {Math.round(exercise.durationInSeconds / 60)} minutes</Text>
-                    {exercise.calories && <Text>Calories: {exercise.calories}</Text>}
+                    {exercise.calories ? (
+                      <Text>Calories: {exercise.calories}</Text>
+                    ) : null}
                   </View>
                 ))}
               </View>
-            )}
+            ) : null}
+  
+            {/* Ensure there's always some content */}
+            {!item.sleep && !item.summary && (!item.exercises || item.exercises.length === 0) ? (
+              <View style={styles.metricContainer}>
+                <Text style={styles.noDataText}>No detailed health data available for this day</Text>
+              </View>
+            ) : null}
           </View>
         ))}
       </ScrollView>
@@ -159,24 +247,28 @@ export default function AnalyzedDataScreen() {
             <View style={styles.metricContainer}>
               <Text style={styles.metricHeader}>Mood</Text>
               <Text>Score: {checkIn.mood.score}/5 ({checkIn.mood.label})</Text>
-              {checkIn.notes && (
+              
+              {/* Display notes from either notes field or mood.description */}
+              {(checkIn.notes || (checkIn.mood && checkIn.mood.description)) ? (
                 <View style={styles.notesContainer}>
                   <Text style={styles.notesHeader}>Notes:</Text>
-                  <Text style={styles.notesText}>{checkIn.notes}</Text>
+                  <Text style={styles.notesText}>
+                    {checkIn.notes || checkIn.mood.description || ''}
+                  </Text>
                 </View>
-              )}
+              ) : null}
             </View>
             
-            {checkIn.activities && checkIn.activities.length > 0 && (
+            {checkIn.activities && checkIn.activities.length > 0 ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Activities</Text>
-                {checkIn.activities.map((activity: any, actIndex: number) => (
+                {checkIn.activities.map((activity, actIndex) => (
                   <Text key={actIndex}>
-                    {activity.type}: {activity.level}
+                    {activity.type || ''}: {activity.level || ''}
                   </Text>
                 ))}
               </View>
-            )}
+            ) : null}
           </View>
         ))}
       </ScrollView>
@@ -199,11 +291,11 @@ export default function AnalyzedDataScreen() {
           </Text>
         </View>
         
-        {warning && (
+        {warning ? (
           <View style={styles.warningContainer}>
             <Text style={styles.warningText}>{warning}</Text>
           </View>
-        )}
+        ) : null}
         
         <View style={styles.tabContainer}>
           <TouchableOpacity 

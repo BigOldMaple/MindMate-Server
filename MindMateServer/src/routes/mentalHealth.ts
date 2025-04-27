@@ -381,6 +381,7 @@ router.get('/baseline/analyzed-data', authenticateToken, async (req: any, res) =
     }).sort({ date: -1 }).lean();
     
     // Fetch ALL check-ins for this date range without limit
+    // IMPORTANT: Don't limit the number of check-ins returned
     const checkIns = await CheckIn.find({
       userId: new Types.ObjectId(req.userId),
       timestamp: { $gte: startDate, $lte: endDate }
