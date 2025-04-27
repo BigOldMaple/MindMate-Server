@@ -13,6 +13,7 @@ import SyncHealthDataButton from '@/components/SyncHealthDataButton';
 import EstablishBaselineButton from '@/components/EstablishBaselineButton';
 import AnalyzeRecentButton from '@/components/AnalyzeRecentButton';
 import ClearAnalysisButton from '@/components/ClearAnalysisButton';
+import SupportRequestsSection from '@/components/SupportRequestsSection';
 
 
 export default function HomeScreen() {
@@ -267,6 +268,9 @@ export default function HomeScreen() {
         </Text>
       </Pressable>
 
+      {/* Support Requests Section */}
+      <SupportRequestsSection />
+
       {/* Health Data Sync Button */}
       <SyncHealthDataButton />
 
@@ -288,9 +292,14 @@ export default function HomeScreen() {
       <View style={styles.networkCard}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Support Network</Text>
-          <Link href="./home/support_network" style={styles.manageLink}>
-            <Text style={styles.manageLinkText}>Manage</Text>
-          </Link>
+          <View style={styles.headerActions}>
+            <Pressable onPress={() => router.push('/support-statistics')} style={styles.statsLink}>
+              <FontAwesome name="bar-chart" size={16} color="#2196F3" />
+            </Pressable>
+            <Link href="./home/support_network" style={styles.manageLink}>
+              <Text style={styles.manageLinkText}>Manage</Text>
+            </Link>
+          </View>
         </View>
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -508,5 +517,13 @@ const styles = StyleSheet.create({
   },
   checkInTextDisabled: {
     color: '#999',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statsLink: {
+    padding: 8,
+    marginRight: 4,
   }
 });

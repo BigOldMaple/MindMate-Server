@@ -4,6 +4,7 @@ import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthS
 import { MentalHealthBaseline, IMentalHealthBaseline } from '../Database/MentalHealthBaselineSchema';
 import { llmAnalysisService } from '../services/llmAnalysisService';
 import { auth } from '../services/auth';
+import { peerSupportService } from '../services/peerSupportService';
 import { ApiError } from '../middleware/error';
 import { Types } from 'mongoose';
 import { HealthData } from '../Database/HealthDataSchema';
@@ -621,36 +622,126 @@ router.post('/support/:assessmentId', authenticateToken, async (req: any, res) =
 // Get users needing support (for buddies)
 router.get('/buddy-support-requests', authenticateToken, async (req: any, res) => {
   try {
-    const { User } = require('../Database/Schema');
-
-    // Get the current user's data
-    const currentUser = await User.findById(req.userId);
-
-    if (!currentUser) {
-      throw new ApiError(404, 'User not found');
-    }
-
-    // Get IDs of users for whom the current user is a buddy
-    const buddyUserIds = currentUser.buddyPeers.map((buddy: any) => buddy.userId);
-
-    // Find assessments where those users need support
-    const supportRequests = await MentalHealthState.find({
-      userId: { $in: buddyUserIds },
-      needsSupport: true,
-      supportRequestStatus: 'buddyRequested'
-    })
-      .populate('userId', 'username profile.name')
-      .sort({ supportRequestTime: 1 })
-      .lean();
-
+    const supportRequests = await peerSupportService.getActiveSupportRequests('buddy', req.userId);
     res.json(supportRequests);
   } catch (error) {
-    if (error instanceof ApiError) {
-      res.status(error.statusCode).json({ error: error.message });
-    } else {
-      console.error('Get support requests error:', error);
-      res.status(500).json({ error: 'Failed to fetch support requests' });
+    console.error('Get buddy support requests error:', error);
+    res.status(500).json({ error: 'Failed to fetch support requests' });
+  }
+});
+
+// Get community support requests
+router.get('/community-support-requests', authenticateToken, async (req: any, res) => {
+  try {
+    const supportRequests = await peerSupportService.getActiveSupportRequests('community', req.userId);
+    res.json(supportRequests);
+  } catch (error) {
+    console.error('Get community support requests error:', error);
+    res.status(500).json({ error: 'Failed to fetch support requests' });
+  }
+});
+
+// Get global support requests
+router.get('/global-support-requests', authenticateToken, async (req: any, res) => {
+  try {
+    const supportRequests = await peerSupportService.getActiveSupportRequests('global', req.userId);
+    res.json(supportRequests);
+  } catch (error) {
+    console.error('Get global support requests error:', error);
+    res.status(500).json({ error: 'Failed to fetch support requests' });
+  }
+});
+
+// Provide support to a user
+router.post('/provide-support/:assessmentId', authenticateToken, async (req: any, res) => {
+  try {
+    const { assessmentId } = req.params;
+    
+    // Validate assessment ID
+    if (!Types.ObjectId.isValid(assessmentId)) {
+      return res.status(400).json({ error: 'Invalid assessment ID' });
     }
+    
+    // Record support provision
+    const success = await peerSupportService.recordSupportProvided(
+      new Types.ObjectId(assessmentId),
+      req.userId
+    );
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Assessment not found or support already provided' });
+    }
+    
+    res.json({ message: 'Support provided successfully' });
+  } catch (error) {
+    console.error('Provide support error:', error);
+    res.status(500).json({ error: 'Failed to provide support' });
+  }
+});
+
+// Get support statistics for the current user
+router.get('/support-statistics', authenticateToken, async (req: any, res) => {
+  try {
+    const { SupportStatistics } = require('../Database/SupportStatisticsSchema');
+    
+    // Get the user's support statistics
+    const stats = await SupportStatistics.findOne({
+      userId: new Types.ObjectId(req.userId)
+    }).lean();
+    
+    if (!stats) {
+      // If no stats exist yet, return default empty stats
+      return res.json({
+        providedSupport: {
+          total: 0,
+          buddyTier: 0,
+          communityTier: 0,
+          globalTier: 0,
+          lastProvidedAt: null
+        },
+        receivedSupport: {
+          total: 0, 
+          buddyTier: 0,
+          communityTier: 0,
+          globalTier: 0,
+          lastReceivedAt: null
+        },
+        supportImpact: 0,
+        recentHistory: []
+      });
+    }
+    
+    // Calculate support impact score (0-100)
+    // This is a simple formula that weights providing support slightly higher
+    // In a real implementation, you might have a more sophisticated algorithm
+    const providedWeight = 0.6;  // 60% weight for provided support
+    const receivedWeight = 0.4;  // 40% weight for received support
+    
+    const maxSupport = 20; // Cap for normalization
+    const normalizedProvided = Math.min(stats.supportProvided.total, maxSupport) / maxSupport;
+    const normalizedReceived = Math.min(stats.supportReceived.total, maxSupport) / maxSupport;
+    
+    const supportImpact = Math.round(
+      (normalizedProvided * providedWeight + normalizedReceived * receivedWeight) * 100
+    );
+    
+    // Get the 5 most recent support history entries
+    const recentHistory = stats.supportHistory
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 5);
+    
+    // Format response
+    const response = {
+      providedSupport: stats.supportProvided,
+      receivedSupport: stats.supportReceived,
+      supportImpact,
+      recentHistory
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Get support statistics error:', error);
+    res.status(500).json({ error: 'Failed to fetch support statistics' });
   }
 });
 
