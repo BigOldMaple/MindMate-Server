@@ -5,13 +5,12 @@ import { HealthData } from '../Database/HealthDataSchema';
 import { CheckIn } from '../Database/CheckInSchema';
 import { User } from '../Database/Schema';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
-import { peerSupportService } from './peerSupportService';// declared never used
 import { MentalHealthBaseline, IMentalHealthBaseline } from '../Database/MentalHealthBaselineSchema';
 
-
 // Define the analysis type
-export type AnalysisType = 'baseline' | 'recent' | 'standard';
+export type AnalysisType = 'baseline' | 'recent';
 
+// Types for LLM response
 interface LLMResponse {
     mentalHealthStatus: 'stable' | 'declining' | 'critical';
     confidenceScore: number;
@@ -420,7 +419,7 @@ class LLMAnalysisService {
     private async collectHealthData(
         userId: Types.ObjectId,
         days: number = 14,
-        analysisType: AnalysisType = 'standard'
+        analysisType: AnalysisType = 'recent'
     ): Promise<any> {
         try {
             // Get the date range for the query
@@ -501,98 +500,32 @@ class LLMAnalysisService {
     }
 
     /**
-     * Format health data for LLM analysis
+     * Format health data for LLM analysis based on analysis type
      */
     private async formatDataForLLM(data: any): Promise<string> {
-        const { userId, healthData, checkIns, startDate, endDate, analysisType } = data;
-        const dayCount = healthData.length > 0 ?
-            Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-
-        let prompt = '';
-
-        // Create a prompt based on analysis type
+        const { analysisType } = data;
+        
+        // Generate specific prompt based on analysis type
+        let prompt: string;
+        
         if (analysisType === 'baseline') {
-            prompt = this.createBaselinePrompt(healthData, checkIns, dayCount, startDate, endDate);
-        } else if (analysisType === 'recent') {
-            prompt = await this.createRecentAnalysisPrompt(userId, healthData, checkIns, dayCount, startDate, endDate);
+            prompt = this.createBaselinePrompt(data);
         } else {
-            prompt = this.createStandardPrompt(healthData, checkIns, dayCount, startDate, endDate);
-        }
-
-        // Add assessment instructions (common for all analysis types)
-        prompt += `
-        Based on this data, please analyze the user's mental health state. Consider the following metrics:
-        1. Sleep hours and quality
-        2. Activity level (based on steps and exercise)
-        3. Mood from check-ins
-        4. Any significant changes in patterns
-        5. Any risk or protective factors evident in the data
-        
-        IMPORTANT RULES FOR TRIGGERING SUPPORT REQUESTS:
-        - You MUST set "needsSupport" to TRUE if ANY of these conditions are met:
-          * The user's mentalHealthStatus is "critical"
-          * Any check-in shows mood scores of 1 out of 5, for 3 straight days
-          * Check-in notes contain concerning phrases related to hopelessness, self-harm, or suicidal thoughts
-          * Multiple days of negative changes in health patterns are detected
-        
-        Provide your assessment in the following JSON format (and only respond with this JSON):
-        {
-          "mentalHealthStatus": "stable|declining|critical",
-          "confidenceScore": 0.XX,
-          "reasoningData": {
-            "sleepHours": X.X,
-            "sleepQuality": "poor|fair|good",
-            "activityLevel": "low|moderate|high",
-            "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
-            "checkInNotes": "summary of relevant notes",
-            "recentExerciseMinutes": XXX,
-            "stepsPerDay": XXXX,
-            "significantChanges": ["list any significant changes you identified"],
-            "additionalFactors": {
-              "key1": "value1",
-              "key2": "value2"
-            }
-          },
-          "needsSupport": true|false,
-          
-          // Always include these fields, with more detailed content when needsSupport is true
-          "supportReason": "A brief, clear explanation of why this user needs support based on their health data",
-          "supportTips": [
-            "2-3 specific, actionable tips for the person providing support"
-          ]
+            // Default to recent analysis
+            prompt = await this.createRecentAnalysisPrompt(data);
         }
         
-        For mentalHealthStatus:
-        - "stable" means the user's metrics indicate good mental health with no major concerns
-        - "declining" means there are some concerning patterns that might indicate declining mental health
-        - "critical" means there are serious concerns that require immediate attention
-        
-        For checkInMood:
-        - Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
-        - Do NOT use string labels like "good" or "poor" for this field
-        
-        VALIDATION CHECK: Before finalizing your response, verify that if you've identified any concerns in the data, needsSupport is set to TRUE.
-        
-        When needsSupport is true:
-        - Include a supportReason that clearly explains the concerning patterns in 1-2 sentences
-        - Include 2-3 supportTips with practical, non-clinical advice for peers offering support
-        - Make tips actionable and specific to the user's situation
-        
-        Only include fields in reasoningData if you have sufficient information to make a determination.
-        `;
         return prompt;
     }
 
     /**
      * Create a prompt for baseline analysis
      */
-    private createBaselinePrompt(
-        healthData: HealthDataRecord[],
-        checkIns: CheckInRecord[],
-        dayCount: number,
-        startDate: Date,
-        endDate: Date
-    ): string {
+    private createBaselinePrompt(data: any): string {
+        const { healthData, checkIns, startDate, endDate } = data;
+        const dayCount = healthData.length > 0 ?
+            Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
         return `
 You are a mental health assessment AI specialized in establishing mental health baselines. You have been provided with ${healthData.length} health records and ${checkIns.length} mood check-ins from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} (spanning ${dayCount} days).
 
@@ -607,28 +540,57 @@ IMPORTANT NOTE ABOUT BASELINE ANALYSIS:
 
 Health metrics summary:
 ${this.formatHealthDataSummary(healthData, checkIns)}
+
+Based on this data, please analyze the user's mental health baseline. Consider the following metrics:
+1. Sleep hours and quality
+2. Activity level (based on steps and exercise)
+3. Mood from check-ins
+4. Any significant patterns evident in the data
+
+IMPORTANT: For baseline analysis, do NOT evaluate if the user needs support - this is just establishing their normal state.
+
+Provide your assessment in the following JSON format (and only respond with this JSON):
+{
+  "mentalHealthStatus": "stable|declining|critical",
+  "confidenceScore": 0.XX,
+  "reasoningData": {
+    "sleepHours": X.X,
+    "sleepQuality": "poor|fair|good",
+    "activityLevel": "low|moderate|high",
+    "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
+    "stepsPerDay": XXXX,
+    "recentExerciseMinutes": XXX,
+    "significantChanges": ["list any significant patterns you identified"]
+  },
+  "supportTips": []
+}
+
+For mentalHealthStatus, focus on the user's overall baseline state. For a baseline analysis, this is typically "stable" unless there are clear indications of ongoing issues.
+
+For checkInMood:
+- Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
+- Do NOT use string labels like "good" or "poor" for this field
+
+Only include fields in reasoningData if you have sufficient information to make a determination.
+
+REMEMBER: This is BASELINE analysis to establish normal patterns, NOT to identify if the user currently needs support.
 `;
     }
 
     /**
-     * Create a prompt for recent analysis with recency weighting
-     * This version compares against the baseline if available
+     * Create a prompt for recent analysis with recency weighting 
+     * and baseline comparison if baseline is available
      */
-    private async createRecentAnalysisPrompt(
-        userId: Types.ObjectId,
-        healthData: HealthDataRecord[],
-        checkIns: CheckInRecord[],
-        dayCount: number,
-        startDate: Date,
-        endDate: Date
-    ): Promise<string> {
+    private async createRecentAnalysisPrompt(data: any): Promise<string> {
+        const { userId, healthData, checkIns, startDate, endDate } = data;
+        
         // For recent analysis, we'll focus on the last 3 days with recency weighting
         // Filter to get only the last 3 days of data
         const threeDay = new Date(endDate);
         threeDay.setDate(threeDay.getDate() - 3);
 
-        const recentHealthData = healthData.filter(day => new Date(day.date) >= threeDay);
-        const recentCheckIns = checkIns.filter(checkIn => new Date(checkIn.timestamp) >= threeDay);
+        const recentHealthData: HealthDataRecord[] = healthData.filter((day: HealthDataRecord): boolean => new Date(day.date) >= threeDay);
+        const recentCheckIns: CheckInRecord[] = checkIns.filter((checkIn: CheckInRecord) => new Date(checkIn.timestamp) >= threeDay);
 
         // Try to find the most recent baseline assessment for comparison
         const baselineAssessment = await this.getBaselineAssessment(userId);
@@ -660,6 +622,13 @@ You are a mental health assessment AI specialized in detecting recent changes. Y
 TASK: RECENT WEIGHTED ANALYSIS WITH BASELINE COMPARISON
 This is a RECENT ANALYSIS which means you should focus on the most recent 3 days of data with RECENCY WEIGHTING, and COMPARE against the user's baseline (if available).
 
+CRITICAL INSTRUCTION - CHECK-IN NOTES PRIORITY:
+- User-provided check-in notes should be given HIGHEST PRIORITY in your analysis
+- What a user writes in their notes is extremely important
+- Even if other health metrics appear normal, highly concerning language in notes should override this
+- Pay very close attention to the exact wording and sentiment in notes
+- Look for expressions of distress, hopelessness, isolation, feeling overwhelmed, or hints at self-harm
+
 IMPORTANT NOTE ABOUT RECENCY WEIGHTING:
 - Data from today should be weighted approximately 3x more heavily than data from 3 days ago
 - Data from yesterday should be weighted approximately 2x more heavily than data from 3 days ago
@@ -679,33 +648,68 @@ ${baselineInfo}
 
 Historical context (if available):
 ${healthData.length > recentHealthData.length ? 'User has additional historical data available beyond these 3 days' : 'No additional historical data available'}
+
+Based on this data, please analyze the user's CURRENT mental health state. Consider the following metrics:
+1. CHECK-IN NOTES (HIGHEST PRIORITY) - direct expressions from the user
+2. Sleep hours and quality
+3. Activity level (based on steps and exercise)
+4. Mood from check-ins
+5. Any significant changes in patterns or deviations from baseline
+
+IMPORTANT RULES FOR TRIGGERING SUPPORT REQUESTS:
+- You MUST set "needsSupport" to TRUE if ANY of these conditions are met:
+  * Any check-in note contains expressions of distress, hopelessness, or concerning language
+  * The user directly or indirectly mentions feeling overwhelmed, isolated, or struggling
+  * The user uses negative language about themselves or their situation in notes
+  * The user's mentalHealthStatus is "critical"
+  * Significant negative deviations from baseline are detected
+  * Multiple days of negative changes in health patterns are detected
+
+Provide your assessment in the following JSON format (and only respond with this JSON):
+{
+  "mentalHealthStatus": "stable|declining|critical",
+  "confidenceScore": 0.XX,
+  "reasoningData": {
+    "sleepHours": X.X,
+    "sleepQuality": "poor|fair|good",
+    "activityLevel": "low|moderate|high",
+    "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
+    "checkInNotes": "summary of relevant notes",
+    "recentExerciseMinutes": XXX,
+    "stepsPerDay": XXXX,
+    "significantChanges": ["list any significant changes you identified"],
+    "additionalFactors": {
+      "key1": "value1",
+      "key2": "value2"
+    }
+  },
+  "needsSupport": true|false,
+  "supportReason": "A brief, clear explanation of why this user needs support based on their health data",
+  "supportTips": [
+    "2-3 specific, actionable tips for the person providing support"
+  ]
+}
+
+For mentalHealthStatus:
+- "stable" means the user's metrics indicate good mental health with no major concerns
+- "declining" means there are some concerning patterns that might indicate declining mental health
+- "critical" means there are serious concerns that require immediate attention
+
+For checkInMood:
+- Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
+- Do NOT use string labels like "good" or "poor" for this field
+
+VALIDATION CHECK: Before finalizing your response, verify that:
+1. If there are ANY concerning notes from the user, "needsSupport" MUST be set to TRUE
+2. If you've identified any concerning patterns in the data, "needsSupport" MUST be set to TRUE
+3. If "needsSupport" is TRUE, you MUST include a meaningful "supportReason" and 2-3 specific "supportTips"
+4. If mentalHealthStatus is "critical", you MUST set "needsSupport" to TRUE
+
+Only include fields in reasoningData if you have sufficient information to make a determination.
 `;
     }
 
-    /**
-     * Create a prompt for standard analysis
-     */
-    private createStandardPrompt(
-        healthData: HealthDataRecord[],
-        checkIns: CheckInRecord[],
-        dayCount: number,
-        startDate: Date,
-        endDate: Date
-    ): string {
-        return `
-You are a mental health assessment AI specialized in analyzing health data metrics. You have been provided with ${dayCount} days of health and mood data from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}.
-
-IMPORTANT NOTE ABOUT MISSING DATA:
-- Missing data points should NOT be interpreted as negative health indicators
-- Missing sleep, activity, or mood data is common and often means the user didn't record data (not that they didn't sleep, exercise, or had a bad day)
-- Only make assessments based on available data points
-- Lower your confidence score when data is sparse
-- If less than 50% of days have data for a particular metric, do not draw strong conclusions about that metric
-
-Health metrics summary:
-${this.formatHealthDataSummary(healthData, checkIns)}
-`;
-    }
+// Standard prompt method removed
 
     /**
      * Format health data and check-ins into a readable summary
@@ -726,8 +730,27 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
 
         if (recentFirst) {
             // Sort by date descending for recency analysis
-            sortedHealthData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            sortedCheckIns.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            sortedHealthData.sort((a: HealthDataRecord, b: HealthDataRecord) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            sortedCheckIns.sort((a: CheckInRecord, b: CheckInRecord) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        }
+
+        // Format mood check-ins and notes first (giving them priority in the presentation)
+        summary += "\nUSER CHECK-INS AND NOTES (HIGHEST PRIORITY):\n";
+        if (sortedCheckIns.length > 0) {
+            sortedCheckIns.forEach((checkIn: CheckInRecord) => {
+                const date = new Date(checkIn.timestamp).toISOString().split('T')[0];
+                summary += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
+
+                // Emphasize notes by putting them on their own line and adding emphasis
+                const noteText = checkIn.notes || checkIn.mood.description;
+                if (noteText) {
+                    summary += `\n  USER NOTES: "${noteText}"\n`;
+                } else {
+                    summary += '\n';
+                }
+            });
+        } else {
+            summary += "No mood check-ins or notes available.\n";
         }
 
         // Format sleep data
@@ -763,25 +786,6 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             summary += "No activity data available.\n";
         }
 
-        // Format mood check-ins
-        summary += "\nMood check-ins:\n";
-        if (sortedCheckIns.length > 0) {
-            sortedCheckIns.forEach((checkIn: CheckInRecord) => {
-                const date = new Date(checkIn.timestamp).toISOString().split('T')[0];
-                summary += `- ${date}: Mood score: ${checkIn.mood.score}/5 (${checkIn.mood.label})`;
-
-                // Include both notes field and mood.description field if available
-                const noteText = checkIn.notes || checkIn.mood.description;
-                if (noteText) {
-                    summary += `, Notes: "${noteText}"`;
-                }
-
-                summary += '\n';
-            });
-        } else {
-            summary += "No mood check-ins available.\n";
-        }
-
         return summary;
     }
 
@@ -798,7 +802,23 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             }
 
             const jsonStr = jsonMatch[0];
-            return JSON.parse(jsonStr) as LLMResponse;
+            const parsed = JSON.parse(jsonStr) as LLMResponse;
+            
+            // Ensure needsSupport is a boolean
+            parsed.needsSupport = !!parsed.needsSupport;
+            
+            // If needsSupport is true, ensure supportReason and supportTips are provided
+            if (parsed.needsSupport) {
+                parsed.supportReason = parsed.supportReason || "User may need support based on mental health assessment";
+                parsed.supportTips = parsed.supportTips || ["Listen actively", "Encourage professional help if needed"];
+            }
+            
+            // Ensure checkInMood is a number
+            if (parsed.reasoningData.checkInMood && typeof parsed.reasoningData.checkInMood !== 'number') {
+                parsed.reasoningData.checkInMood = this.convertMoodToNumber(parsed.reasoningData.checkInMood);
+            }
+            
+            return parsed;
         } catch (error) {
             console.error('[LLM] Error parsing LLM response:', error);
             // Return a default response for error handling
@@ -832,15 +852,16 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
         const stepsPerDay = this.calculateAverageSteps(healthData);
         const significantChanges = this.detectSignificantChanges(healthData, checkIns);
 
-
         // This is a simplified assessment to help guide the LLM
         // The actual assessment will be done by the LLM
         let mentalHealthStatus: 'stable' | 'declining' | 'critical' = 'stable';
+        let needsSupport = false;
 
         // Simple heuristics for demonstration
-        if (checkInMood && checkInMood < 2) {
+        if (checkInMood !== undefined && checkInMood < 2) {
             mentalHealthStatus = 'critical';
-        } else if (sleepHours && sleepHours < 5) {
+            needsSupport = true;
+        } else if (sleepHours !== undefined && sleepHours < 5) {
             mentalHealthStatus = 'declining';
         } else if (significantChanges.length > 2) {
             mentalHealthStatus = 'declining';
@@ -862,50 +883,17 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                     dataCompleteness: (healthData.length / 14).toFixed(2)
                 }
             },
-            needsSupport: mentalHealthStatus !== 'stable'
+            needsSupport: needsSupport,
+            supportReason: needsSupport ? "Automated support request based on low mood score" : undefined,
+            supportTips: needsSupport ? [
+                "Listen actively and validate feelings",
+                "Encourage professional help if needed",
+                "Check in regularly for the next few days"
+            ] : []
         };
     }
 
-    /**
-     * Analyze a user's mental health state (standard 14-day analysis)
-     */
-    public async analyzeMentalHealth(userId: string): Promise<LLMResponse> {
-        try {
-            console.log(`[LLM] Analyzing mental health for user ${userId}`);
-
-            // Collect health data
-            const userData = await this.collectHealthData(
-                new Types.ObjectId(userId),
-                14, // Default 14 days
-                'standard'
-            );
-
-            // Pre-process data to get initial metrics
-            const preprocessedData = this.preprocessData(userData);
-
-            // Format the data for LLM
-            const prompt = await this.formatDataForLLM(userData);
-
-            // Query the LLM
-            const llmResponse = await this.queryLLM(prompt);
-
-            // Parse the response
-            const parsedResponse = this.parseLLMResponse(llmResponse);
-
-            // Merge with pre-processed data to ensure completeness
-            const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
-
-            // Save the results to the database
-            await this.saveMentalHealthState(userId, finalResponse, 'standard');
-
-            console.log(`[LLM] Analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}`);
-
-            return finalResponse;
-        } catch (error) {
-            console.error('[LLM] Error analyzing mental health:', error);
-            throw error;
-        }
-    }
+// Standard analysis method removed
 
     /**
      * Analyze recent health data (past 3 days) with recency weighting
@@ -949,7 +937,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             // Save the results to the database with analysis type
             await this.saveMentalHealthState(userId, finalResponse, 'recent');
 
-            console.log(`[LLM] Recent analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}`);
+            console.log(`[LLM] Recent analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}, needsSupport: ${finalResponse.needsSupport}`);
 
             return finalResponse;
         } catch (error) {
@@ -983,6 +971,11 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
 
             // Parse the response
             const parsedResponse = this.parseLLMResponse(llmResponse);
+
+            // For baseline, always set needsSupport to false
+            parsedResponse.needsSupport = false;
+            parsedResponse.supportReason = undefined;
+            parsedResponse.supportTips = [];
 
             // Merge with pre-processed data to ensure completeness
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
@@ -1024,6 +1017,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             throw error;
         }
     }
+    
     /**
      * Merge the LLM response with pre-processed data to ensure all fields are present
      */
@@ -1049,7 +1043,9 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                     ...llmResponse.reasoningData.additionalFactors
                 }
             },
-            needsSupport: llmResponse.needsSupport
+            needsSupport: llmResponse.needsSupport,
+            supportReason: llmResponse.supportReason || (llmResponse.needsSupport ? preprocessedData.supportReason : undefined),
+            supportTips: llmResponse.supportTips || (llmResponse.needsSupport ? preprocessedData.supportTips : [])
         };
     }
 
@@ -1059,7 +1055,7 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
     private async saveMentalHealthState(
         userId: string,
         analysis: LLMResponse,
-        analysisType: AnalysisType = 'standard'
+        analysisType: AnalysisType = 'recent'
     ): Promise<IMentalHealthState> {
         try {
             // Add metadata about the analysis type
@@ -1111,10 +1107,10 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
             // Get all users
             const users = await User.find().select('_id');
 
-            // Analyze each user's mental health
+            // Analyze each user's mental health using recent analysis
             for (const user of users) {
                 try {
-                    await this.analyzeMentalHealth(user._id.toString());
+                    await this.analyzeRecentHealth(user._id.toString());
                 } catch (error) {
                     console.error(`[LLM] Error analyzing user ${user._id}:`, error);
                     // Continue with next user
