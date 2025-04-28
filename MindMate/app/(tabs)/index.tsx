@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
+import { StyleSheet, Pressable, ActivityIndicator, Alert, Platform, ScrollView } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, router } from 'expo-router';
@@ -193,7 +193,11 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={true}
+    >
       {/* Current Wellness Card */}
       <View style={styles.wellnessCard}>
         <View style={styles.wellnessHeader}>
@@ -322,7 +326,7 @@ export default function HomeScreen() {
           </View>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -525,5 +529,9 @@ const styles = StyleSheet.create({
   statsLink: {
     padding: 8,
     marginRight: 4,
+  },
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 32, 
   }
 });

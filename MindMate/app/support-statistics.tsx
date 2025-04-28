@@ -4,7 +4,7 @@ import { StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Stack } from 'expo-router';
-import { mentalHealthApi } from '@/services/mentalHealthApi';
+import { mentalHealthApi } from '@/services/mentalHealthApi'; //declared but never used
 
 interface SupportStats {
   providedSupport: {

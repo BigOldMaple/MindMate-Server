@@ -4,20 +4,11 @@ import { StyleSheet, FlatList, Pressable, Alert, ActivityIndicator } from 'react
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter, Stack } from 'expo-router';
-import { mentalHealthApi } from '@/services/mentalHealthApi';
+import { mentalHealthApi, PopulatedSupportRequest } from '@/services/mentalHealthApi';
 
-interface SupportRequest {
-  _id: string;
-  userId: {
-    _id: string;
-    username: string;
-    profile: {
-      name: string;
-    };
-  };
-  mentalHealthStatus: 'stable' | 'declining' | 'critical';
-  timestamp: string;
-  supportRequestTime: string;
+// Update the interface to match our new PopulatedSupportRequest type
+interface SupportRequest extends PopulatedSupportRequest {
+  // Any additional properties specific to this component can be added here
 }
 
 export default function GlobalSupportScreen() {
@@ -169,6 +160,7 @@ export default function GlobalSupportScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Styles remain unchanged
   container: {
     flex: 1,
     backgroundColor: '#F5F6FA',

@@ -24,6 +24,33 @@ export interface MentalHealthAssessment {
   };
 }
 
+// Interface for populated support requests returned from the API
+export interface PopulatedSupportRequest {
+  _id: string;
+  userId: {
+    _id: string;
+    username: string;
+    profile: {
+      name: string;
+    };
+  };
+  timestamp: string;
+  mentalHealthStatus: 'stable' | 'declining' | 'critical';
+  confidenceScore: number;
+  needsSupport: boolean;
+  supportRequestStatus: 'none' | 'buddyRequested' | 'communityRequested' | 'globalRequested' | 'supportProvided';
+  supportRequestTime: string;
+  supportProvidedBy?: string;
+  supportProvidedTime?: string;
+  reasoningData: {
+    sleepQuality?: 'poor' | 'fair' | 'good';
+    activityLevel?: 'low' | 'moderate' | 'high';
+    checkInMood?: number;
+    significantChanges?: string[];
+    [key: string]: any;
+  };
+}
+
 class MentalHealthApiError extends Error {
   constructor(message: string) {
     super(message);
@@ -172,7 +199,7 @@ export const mentalHealthApi = {
   /**
    * Get buddy support requests
    */
-  async getBuddySupportRequests(): Promise<MentalHealthAssessment[]> {
+  async getBuddySupportRequests(): Promise<PopulatedSupportRequest[]> {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/mental-health/buddy-support-requests`, { headers });
@@ -191,7 +218,7 @@ export const mentalHealthApi = {
   /**
    * Get community support requests
    */
-  async getCommunitySupportRequests(): Promise<MentalHealthAssessment[]> {
+  async getCommunitySupportRequests(): Promise<PopulatedSupportRequest[]> {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/mental-health/community-support-requests`, { headers });
@@ -210,7 +237,7 @@ export const mentalHealthApi = {
   /**
    * Get global support requests
    */
-  async getGlobalSupportRequests(): Promise<MentalHealthAssessment[]> {
+  async getGlobalSupportRequests(): Promise<PopulatedSupportRequest[]> {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/mental-health/global-support-requests`, { headers });
