@@ -49,6 +49,8 @@ export interface PopulatedSupportRequest {
     significantChanges?: string[];
     [key: string]: any;
   };
+  supportReason?: string;
+  supportTips?: string[];
 }
 
 class MentalHealthApiError extends Error {

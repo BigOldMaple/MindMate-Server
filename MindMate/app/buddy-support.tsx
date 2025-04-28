@@ -115,10 +115,26 @@ export default function BuddySupportScreen() {
           </View>
           <Text style={styles.timeAgo}>{timeAgo}</Text>
         </View>
-        <View style={styles.requestActions}>
+        
+        {/* Support reason section */}
+        <View style={styles.requestContent}>
           <Text style={styles.requestText}>
-            {userName} might need support based on recent health data analysis
+            {item.supportReason || 
+              `${userName} might need support based on recent health data analysis`}
           </Text>
+          
+          {/* Support tips section - Only show if available */}
+          {item.supportTips && item.supportTips.length > 0 && (
+            <View style={styles.tipsContainer}>
+              <Text style={styles.tipsHeader}>Support Tips:</Text>
+              {item.supportTips.map((tip, index) => (
+                <Text key={index} style={styles.tipText}>• {tip}</Text>
+              ))}
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.requestActions}>
           <Pressable
             style={styles.supportButton}
             onPress={() => handleProvideSupport(item._id, userId, item.userId.username)}
@@ -177,6 +193,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+  requestContent: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   loadingText: {
     marginTop: 16,
@@ -269,4 +290,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  tipsContainer: {
+    marginTop: 12,
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+  },
+  tipsHeader: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#333',
+  },
+  tipText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#555',
+    marginBottom: 4,
+  }
 });

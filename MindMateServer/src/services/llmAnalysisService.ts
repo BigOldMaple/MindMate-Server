@@ -5,7 +5,7 @@ import { HealthData } from '../Database/HealthDataSchema';
 import { CheckIn } from '../Database/CheckInSchema';
 import { User } from '../Database/Schema';
 import { MentalHealthState, IMentalHealthState } from '../Database/MentalHealthStateSchema';
-import { peerSupportService } from './peerSupportService';
+import { peerSupportService } from './peerSupportService';// declared never used
 import { MentalHealthBaseline, IMentalHealthBaseline } from '../Database/MentalHealthBaselineSchema';
 
 
@@ -27,6 +27,8 @@ interface LLMResponse {
         additionalFactors?: Record<string, any>;
     };
     needsSupport: boolean;
+    supportReason?: string;
+    supportTips?: string[];
 }
 
 // Define types for health data and check-ins
@@ -519,46 +521,56 @@ class LLMAnalysisService {
 
         // Add assessment instructions (common for all analysis types)
         prompt += `
-Based on this data, please analyze the user's mental health state. Consider the following metrics:
-1. Sleep hours and quality
-2. Activity level (based on steps and exercise)
-3. Mood from check-ins
-4. Any significant changes in patterns
-5. Any risk or protective factors evident in the data
-
-Provide your assessment in the following JSON format (and only respond with this JSON):
-{
-  "mentalHealthStatus": "stable|declining|critical",
-  "confidenceScore": 0.XX,
-  "reasoningData": {
-    "sleepHours": X.X,
-    "sleepQuality": "poor|fair|good",
-    "activityLevel": "low|moderate|high",
-    "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
-    "checkInNotes": "summary of relevant notes",
-    "recentExerciseMinutes": XXX,
-    "stepsPerDay": XXXX,
-    "significantChanges": ["list any significant changes you identified"],
-    "additionalFactors": {
-      "key1": "value1",
-      "key2": "value2"
-    }
-  },
-  "needsSupport": true|false
-}
-
-For mentalHealthStatus:
-- "stable" means the user's metrics indicate good mental health with no major concerns
-- "declining" means there are some concerning patterns that might indicate declining mental health
-- "critical" means there are serious concerns that require immediate attention
-
-For checkInMood:
-- Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
-- Do NOT use string labels like "good" or "poor" for this field
-
-Only include fields in reasoningData if you have sufficient information to make a determination.
-`;
-
+        Based on this data, please analyze the user's mental health state. Consider the following metrics:
+        1. Sleep hours and quality
+        2. Activity level (based on steps and exercise)
+        3. Mood from check-ins
+        4. Any significant changes in patterns
+        5. Any risk or protective factors evident in the data
+        
+        Provide your assessment in the following JSON format (and only respond with this JSON):
+        {
+          "mentalHealthStatus": "stable|declining|critical",
+          "confidenceScore": 0.XX,
+          "reasoningData": {
+            "sleepHours": X.X,
+            "sleepQuality": "poor|fair|good",
+            "activityLevel": "low|moderate|high",
+            "checkInMood": X.X, // IMPORTANT: This must be a number from 1-5, NOT a string
+            "checkInNotes": "summary of relevant notes",
+            "recentExerciseMinutes": XXX,
+            "stepsPerDay": XXXX,
+            "significantChanges": ["list any significant changes you identified"],
+            "additionalFactors": {
+              "key1": "value1",
+              "key2": "value2"
+            }
+          },
+          "needsSupport": true|false,
+          
+          // Only include these fields when needsSupport is true
+          "supportReason": "A brief, clear explanation of why this user needs support based on their health data",
+          "supportTips": [
+            "2-3 specific, actionable tips for the person providing support"
+          ]
+        }
+        
+        For mentalHealthStatus:
+        - "stable" means the user's metrics indicate good mental health with no major concerns
+        - "declining" means there are some concerning patterns that might indicate declining mental health
+        - "critical" means there are serious concerns that require immediate attention
+        
+        For checkInMood:
+        - Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
+        - Do NOT use string labels like "good" or "poor" for this field
+        
+        When needsSupport is true:
+        - Include a supportReason that clearly explains the concerning patterns in 1-2 sentences
+        - Include 2-3 supportTips with practical, non-clinical advice for peers offering support
+        - Make tips actionable and specific to the user's situation
+        
+        Only include fields in reasoningData if you have sufficient information to make a determination.
+        `;
         return prompt;
     }
 
@@ -1053,12 +1065,14 @@ ${this.formatHealthDataSummary(healthData, checkIns)}
                 mentalHealthStatus: analysis.mentalHealthStatus,
                 confidenceScore: analysis.confidenceScore,
                 reasoningData: analysis.reasoningData,
-                needsSupport: analysisType === 'baseline' ? false : analysis.needsSupport, // Don't trigger support for baselines
+                needsSupport: analysisType === 'baseline' ? false : analysis.needsSupport,
                 supportRequestStatus: (analysisType === 'baseline' || !analysis.needsSupport) ? 'none' : 'none',
+                supportReason: analysis.supportReason || "This user might need support based on their health data",
+                supportTips: analysis.supportTips || [],
                 metadata: {
-                    analysisType: analysisType
+                  analysisType: analysisType
                 }
-            });
+              });
 
             await mentalHealthState.save();
 

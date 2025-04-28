@@ -22,7 +22,9 @@ export interface IMentalHealthState extends Document {
   supportRequestTime?: Date;
   supportProvidedBy?: Types.ObjectId; // Reference to user who provided support
   supportProvidedTime?: Date;
-  // Allow for additional metadata fields
+  supportReason?: string;
+  supportTips?: string[];
+
   metadata?: Record<string, any>;
 }
 
@@ -89,6 +91,14 @@ const mentalHealthStateSchema = new Schema<IMentalHealthState>({
     ref: 'User'
   },
   supportProvidedTime: Date,
+  supportReason: {
+    type: String,
+    default: null
+  },
+  supportTips: {
+    type: [String],
+    default: []
+  },
   metadata: Schema.Types.Mixed
 }, {
   timestamps: true // Adds createdAt and updatedAt
