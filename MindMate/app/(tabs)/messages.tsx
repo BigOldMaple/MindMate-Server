@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 import { chatApi, ChatPreview } from '@/services/chatApi';
 import { useFocusEffect } from '@react-navigation/native';
 import { buddyPeerApi } from '@/services/buddyPeerApi';
+import { communityApi, Community } from '@/services/communityApi';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Define the relationship categories
 type RelationshipCategory = 'buddyPeers' | 'community' | 'global';
@@ -19,6 +21,7 @@ export default function MessagesScreen() {
   const [buddyPeerIds, setBuddyPeerIds] = useState<string[]>([]);
   const [communityMemberIds, setCommunityMemberIds] = useState<string[]>([]);
   const router = useRouter();
+  const { user } = useAuth();
 
   // Categorized chats
   const categorizedChats = useCategorizedChats(allChats, buddyPeerIds, communityMemberIds);
@@ -59,12 +62,68 @@ export default function MessagesScreen() {
     try {
       // Fetch buddy peers
       const buddyPeers = await buddyPeerApi.getBuddyPeers();
-      setBuddyPeerIds(buddyPeers.map(peer => peer.userId));
+      const buddyPeerIds = buddyPeers.map(peer => peer.userId);
+      setBuddyPeerIds(buddyPeerIds);
 
-      // TODO: Fetch community members
-      // For now we'll use empty array or mock data
-      // Normally, you would fetch this from your community API
-      setCommunityMemberIds([]);
+      // Fetch community members
+      try {
+        // Get communities the user is a member of
+        const communities = await communityApi.fetchAllCommunities();
+
+        // Use type assertion to maintain Community type through the filter
+        const userCommunities = communities.filter(
+          community => community.isUserMember
+        ) as Community[];
+
+        if (userCommunities.length === 0) {
+          setCommunityMemberIds([]);
+          return;
+        }
+
+        const buddyPeerIdSet = new Set(buddyPeerIds);
+        const communityMemberIds: string[] = [];
+
+        // Process each community to extract members
+        for (const community of userCommunities) {
+          if (!community._id) {
+            console.error('Community missing ID:', community);
+            continue;
+          }
+
+          // Get community details with members
+          try {
+            const details = await communityApi.getCommunityDetails(community._id);
+
+            // Process each member
+            details.members.forEach(member => {
+              // Use type guard to properly check for object type
+              let memberId: string | undefined;
+
+              if (typeof member.userId === 'string') {
+                memberId = member.userId;
+              } else if (member.userId && typeof member.userId === 'object') {
+                // Use type assertion for the known structure
+                const userIdObj = member.userId as { _id?: string | { toString(): string } };
+                memberId = userIdObj._id ?
+                  (typeof userIdObj._id === 'string' ? userIdObj._id : userIdObj._id.toString()) :
+                  undefined;
+              }
+
+              // Apply hierarchy: only add if not current user and not already a buddy peer
+              if (memberId && memberId !== user?.id && !buddyPeerIdSet.has(memberId)) {
+                communityMemberIds.push(memberId);
+              }
+            });
+          } catch (err) {
+            console.error(`Error fetching details for community ${community.name}:`, err);
+          }
+        }
+
+        setCommunityMemberIds([...new Set(communityMemberIds)]);
+      } catch (communityError) {
+        console.error('Error fetching community members:', communityError);
+        setCommunityMemberIds([]);
+      }
     } catch (error) {
       console.error('Error fetching relationship data:', error);
     }
@@ -87,7 +146,7 @@ export default function MessagesScreen() {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
+
     if (days === 0) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (days === 1) {
@@ -132,13 +191,13 @@ export default function MessagesScreen() {
           ]}
           onPress={() => setActiveCategory('buddyPeers')}
         >
-          <FontAwesome 
-            name="heart" 
-            size={16} 
-            color={activeCategory === 'buddyPeers' ? '#2196F3' : '#666'} 
+          <FontAwesome
+            name="heart"
+            size={16}
+            color={activeCategory === 'buddyPeers' ? '#2196F3' : '#666'}
             style={styles.categoryIcon}
           />
-          <Text 
+          <Text
             style={[
               styles.categoryText,
               activeCategory === 'buddyPeers' && styles.activeCategoryText
@@ -146,9 +205,11 @@ export default function MessagesScreen() {
           >
             Buddy Peers
           </Text>
-          {categorizedChats.buddyPeers.length > 0 && (
+          {categorizedChats.buddyPeers.some(chat => chat.unreadCount > 0) && (
             <View style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText}>{categorizedChats.buddyPeers.length}</Text>
+              <Text style={styles.categoryBadgeText}>
+                {categorizedChats.buddyPeers.reduce((total, chat) => total + chat.unreadCount, 0)}
+              </Text>
             </View>
           )}
         </Pressable>
@@ -160,13 +221,13 @@ export default function MessagesScreen() {
           ]}
           onPress={() => setActiveCategory('community')}
         >
-          <FontAwesome 
-            name="users" 
-            size={16} 
-            color={activeCategory === 'community' ? '#4CAF50' : '#666'} 
+          <FontAwesome
+            name="users"
+            size={16}
+            color={activeCategory === 'community' ? '#4CAF50' : '#666'}
             style={styles.categoryIcon}
           />
-          <Text 
+          <Text
             style={[
               styles.categoryText,
               activeCategory === 'community' && styles.activeCategoryText
@@ -174,9 +235,11 @@ export default function MessagesScreen() {
           >
             Community
           </Text>
-          {categorizedChats.community.length > 0 && (
+          {categorizedChats.community.some(chat => chat.unreadCount > 0) && (
             <View style={[styles.categoryBadge, { backgroundColor: '#4CAF50' }]}>
-              <Text style={styles.categoryBadgeText}>{categorizedChats.community.length}</Text>
+              <Text style={styles.categoryBadgeText}>
+                {categorizedChats.community.reduce((total, chat) => total + chat.unreadCount, 0)}
+              </Text>
             </View>
           )}
         </Pressable>
@@ -188,13 +251,13 @@ export default function MessagesScreen() {
           ]}
           onPress={() => setActiveCategory('global')}
         >
-          <FontAwesome 
-            name="globe" 
-            size={16} 
-            color={activeCategory === 'global' ? '#9C27B0' : '#666'} 
+          <FontAwesome
+            name="globe"
+            size={16}
+            color={activeCategory === 'global' ? '#9C27B0' : '#666'}
             style={styles.categoryIcon}
           />
-          <Text 
+          <Text
             style={[
               styles.categoryText,
               activeCategory === 'global' && styles.activeCategoryText
@@ -202,9 +265,11 @@ export default function MessagesScreen() {
           >
             Global
           </Text>
-          {categorizedChats.global.length > 0 && (
+          {categorizedChats.global.some(chat => chat.unreadCount > 0) && (
             <View style={[styles.categoryBadge, { backgroundColor: '#9C27B0' }]}>
-              <Text style={styles.categoryBadgeText}>{categorizedChats.global.length}</Text>
+              <Text style={styles.categoryBadgeText}>
+                {categorizedChats.global.reduce((total, chat) => total + chat.unreadCount, 0)}
+              </Text>
             </View>
           )}
         </Pressable>
@@ -225,8 +290,8 @@ export default function MessagesScreen() {
         {/* Active Category Title */}
         <View style={styles.categoryHeaderContainer}>
           <Text style={styles.categoryHeaderText}>
-            {activeCategory === 'buddyPeers' ? 'Buddy Peers' : 
-             activeCategory === 'community' ? 'Community Members' : 'Global Users'}
+            {activeCategory === 'buddyPeers' ? 'Buddy Peers' :
+              activeCategory === 'community' ? 'Community Members' : 'Global Users'}
           </Text>
           <Text style={styles.categoryCount}>
             {activeCategoryChats.length} {activeCategoryChats.length === 1 ? 'conversation' : 'conversations'}
@@ -237,11 +302,11 @@ export default function MessagesScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateTitle}>No Messages in This Category</Text>
             <Text style={styles.emptyStateText}>
-              {activeCategory === 'buddyPeers' 
+              {activeCategory === 'buddyPeers'
                 ? 'Start a conversation with your buddy peers'
                 : activeCategory === 'community'
-                ? 'Connect with members of your communities'
-                : 'Reach out to other users on the platform'}
+                  ? 'Connect with members of your communities'
+                  : 'Reach out to other users on the platform'}
             </Text>
           </View>
         ) : (
@@ -257,19 +322,19 @@ export default function MessagesScreen() {
                   <View style={[
                     styles.avatar,
                     activeCategory === 'buddyPeers' ? styles.buddyAvatar :
-                    activeCategory === 'community' ? styles.communityAvatar :
-                    styles.globalAvatar
+                      activeCategory === 'community' ? styles.communityAvatar :
+                        styles.globalAvatar
                   ]}>
-                    <FontAwesome 
+                    <FontAwesome
                       name={
                         activeCategory === 'buddyPeers' ? 'heart' :
-                        activeCategory === 'community' ? 'users' : 'user'
-                      } 
-                      size={24} 
+                          activeCategory === 'community' ? 'users' : 'user'
+                      }
+                      size={24}
                       color={
                         activeCategory === 'buddyPeers' ? '#2196F3' :
-                        activeCategory === 'community' ? '#4CAF50' : '#9C27B0'
-                      } 
+                          activeCategory === 'community' ? '#4CAF50' : '#9C27B0'
+                      }
                     />
                   </View>
                 </View>
@@ -292,16 +357,16 @@ export default function MessagesScreen() {
                       {chat.lastMessage ? formatTimestamp(chat.lastMessage.timestamp) : ''}
                     </Text>
                   </View>
-                  
+
                   <Text style={styles.username}>
                     @{chat.participant?.username || 'unknown'}
                   </Text>
-                  
-                  <Text 
+
+                  <Text
                     style={[
                       styles.lastMessage,
                       chat.unreadCount > 0 && styles.unreadMessage
-                    ]} 
+                    ]}
                     numberOfLines={1}
                   >
                     {chat.lastMessage?.content || 'No messages yet'}
@@ -321,7 +386,7 @@ export default function MessagesScreen() {
       </ScrollView>
 
       {/* New Message Button */}
-      <Pressable 
+      <Pressable
         style={styles.newMessageButton}
         onPress={() => router.push('/messages/new')}
       >
@@ -333,8 +398,8 @@ export default function MessagesScreen() {
 
 // Custom hook to categorize chats
 function useCategorizedChats(
-  chats: ChatPreview[], 
-  buddyPeerIds: string[], 
+  chats: ChatPreview[],
+  buddyPeerIds: string[],
   communityMemberIds: string[]
 ) {
   // Initialize categories
@@ -347,7 +412,7 @@ function useCategorizedChats(
   // Categorize each chat
   chats.forEach(chat => {
     const participantId = chat.participant?.id;
-    
+
     if (!participantId) {
       return; // Skip if no participant (shouldn't happen)
     }
