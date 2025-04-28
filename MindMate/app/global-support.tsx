@@ -5,6 +5,7 @@ import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter, Stack } from 'expo-router';
 import { mentalHealthApi, PopulatedSupportRequest } from '@/services/mentalHealthApi';
+import { chatApi } from '@/services/chatApi';
 
 // Update the interface to match our new PopulatedSupportRequest type
 interface SupportRequest extends PopulatedSupportRequest {
@@ -39,7 +40,7 @@ export default function GlobalSupportScreen() {
     }
   };
 
-  const handleProvideSupport = async (assessmentId: string, username: string) => {
+  const handleProvideSupport = async (assessmentId: string, userId: string, username: string) => {
     try {
       Alert.alert(
         'Provide Support',
@@ -50,12 +51,17 @@ export default function GlobalSupportScreen() {
             text: 'Confirm',
             onPress: async () => {
               try {
+                // 1. Provide support
                 await mentalHealthApi.provideSupport(assessmentId);
+                
+                // 2. Get or create conversation
+                const conversationId = await chatApi.createConversation(userId);
+                
+                // 3. Navigate with conversation ID instead of username
+                router.push(`/messages/${conversationId}`);
+                
                 Alert.alert('Success', 'You have offered your support');
-                // Refresh the list
                 fetchSupportRequests();
-                // Navigate to messaging with the user
-                router.push(`/messages/${username}`);
               } catch (error) {
                 console.error('Failed to provide support:', error);
                 Alert.alert('Error', 'Failed to provide support');
@@ -70,6 +76,7 @@ export default function GlobalSupportScreen() {
   };
 
   const renderSupportRequestItem = ({ item }: { item: SupportRequest }) => {
+    const userId = item.userId._id.toString();
     const userName = item.userId.profile.name || item.userId.username;
     const status = item.mentalHealthStatus;
     const statusColors = {
@@ -114,7 +121,7 @@ export default function GlobalSupportScreen() {
           </Text>
           <Pressable
             style={styles.supportButton}
-            onPress={() => handleProvideSupport(item._id, item.userId.username)}
+            onPress={() => handleProvideSupport(item._id, userId, item.userId.username)}
           >
             <FontAwesome name="globe" size={16} color="white" />
             <Text style={styles.supportButtonText}>Provide Global Support</Text>

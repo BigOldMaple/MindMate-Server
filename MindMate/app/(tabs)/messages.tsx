@@ -1,22 +1,53 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, View as RNView } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { chatApi, ChatPreview } from '@/services/chatApi';
 import { useFocusEffect } from '@react-navigation/native';
+import { buddyPeerApi } from '@/services/buddyPeerApi';
+
+// Define the relationship categories
+type RelationshipCategory = 'buddyPeers' | 'community' | 'global';
 
 export default function MessagesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [chats, setChats] = useState<ChatPreview[]>([]);
+  const [allChats, setAllChats] = useState<ChatPreview[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<RelationshipCategory>('buddyPeers');
+  const [buddyPeerIds, setBuddyPeerIds] = useState<string[]>([]);
+  const [communityMemberIds, setCommunityMemberIds] = useState<string[]>([]);
   const router = useRouter();
+
+  // Categorized chats
+  const categorizedChats = useCategorizedChats(allChats, buddyPeerIds, communityMemberIds);
+
+  // Initial load
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Refresh when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadInitialData();
+    }, [])
+  );
+
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    await Promise.all([
+      fetchChats(),
+      fetchRelationshipData()
+    ]);
+    setIsLoading(false);
+  };
 
   const fetchChats = async () => {
     try {
       const conversations = await chatApi.getConversations();
-      setChats(conversations);
+      setAllChats(conversations);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load chats');
@@ -24,27 +55,24 @@ export default function MessagesScreen() {
     }
   };
 
-  // Initial load
-  useEffect(() => {
-    const loadInitialData = async () => {
-      setIsLoading(true);
-      await fetchChats();
-      setIsLoading(false);
-    };
+  const fetchRelationshipData = async () => {
+    try {
+      // Fetch buddy peers
+      const buddyPeers = await buddyPeerApi.getBuddyPeers();
+      setBuddyPeerIds(buddyPeers.map(peer => peer.userId));
 
-    loadInitialData();
-  }, []);
-
-  // Refresh when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      fetchChats();
-    }, [])
-  );
+      // TODO: Fetch community members
+      // For now we'll use empty array or mock data
+      // Normally, you would fetch this from your community API
+      setCommunityMemberIds([]);
+    } catch (error) {
+      console.error('Error fetching relationship data:', error);
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchChats();
+    await loadInitialData();
     setRefreshing(false);
   }, []);
 
@@ -83,15 +111,105 @@ export default function MessagesScreen() {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.retryButton} onPress={fetchChats}>
+        <Pressable style={styles.retryButton} onPress={loadInitialData}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </Pressable>
       </View>
     );
   }
 
+  // Get chats for the active category
+  const activeCategoryChats = categorizedChats[activeCategory] || [];
+
   return (
     <View style={styles.container}>
+      {/* Relationship Category Tabs */}
+      <View style={styles.categoryTabsContainer}>
+        <Pressable
+          style={[
+            styles.categoryTab,
+            activeCategory === 'buddyPeers' && styles.activeCategoryTab
+          ]}
+          onPress={() => setActiveCategory('buddyPeers')}
+        >
+          <FontAwesome 
+            name="heart" 
+            size={16} 
+            color={activeCategory === 'buddyPeers' ? '#2196F3' : '#666'} 
+            style={styles.categoryIcon}
+          />
+          <Text 
+            style={[
+              styles.categoryText,
+              activeCategory === 'buddyPeers' && styles.activeCategoryText
+            ]}
+          >
+            Buddy Peers
+          </Text>
+          {categorizedChats.buddyPeers.length > 0 && (
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>{categorizedChats.buddyPeers.length}</Text>
+            </View>
+          )}
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.categoryTab,
+            activeCategory === 'community' && styles.activeCategoryTab
+          ]}
+          onPress={() => setActiveCategory('community')}
+        >
+          <FontAwesome 
+            name="users" 
+            size={16} 
+            color={activeCategory === 'community' ? '#4CAF50' : '#666'} 
+            style={styles.categoryIcon}
+          />
+          <Text 
+            style={[
+              styles.categoryText,
+              activeCategory === 'community' && styles.activeCategoryText
+            ]}
+          >
+            Community
+          </Text>
+          {categorizedChats.community.length > 0 && (
+            <View style={[styles.categoryBadge, { backgroundColor: '#4CAF50' }]}>
+              <Text style={styles.categoryBadgeText}>{categorizedChats.community.length}</Text>
+            </View>
+          )}
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.categoryTab,
+            activeCategory === 'global' && styles.activeCategoryTab
+          ]}
+          onPress={() => setActiveCategory('global')}
+        >
+          <FontAwesome 
+            name="globe" 
+            size={16} 
+            color={activeCategory === 'global' ? '#9C27B0' : '#666'} 
+            style={styles.categoryIcon}
+          />
+          <Text 
+            style={[
+              styles.categoryText,
+              activeCategory === 'global' && styles.activeCategoryText
+            ]}
+          >
+            Global
+          </Text>
+          {categorizedChats.global.length > 0 && (
+            <View style={[styles.categoryBadge, { backgroundColor: '#9C27B0' }]}>
+              <Text style={styles.categoryBadgeText}>{categorizedChats.global.length}</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <FontAwesome name="search" size={20} color="#666" style={styles.searchIcon} />
@@ -104,15 +222,30 @@ export default function MessagesScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {chats.length === 0 ? (
+        {/* Active Category Title */}
+        <View style={styles.categoryHeaderContainer}>
+          <Text style={styles.categoryHeaderText}>
+            {activeCategory === 'buddyPeers' ? 'Buddy Peers' : 
+             activeCategory === 'community' ? 'Community Members' : 'Global Users'}
+          </Text>
+          <Text style={styles.categoryCount}>
+            {activeCategoryChats.length} {activeCategoryChats.length === 1 ? 'conversation' : 'conversations'}
+          </Text>
+        </View>
+
+        {activeCategoryChats.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateTitle}>No Messages Yet</Text>
+            <Text style={styles.emptyStateTitle}>No Messages in This Category</Text>
             <Text style={styles.emptyStateText}>
-              Your messages with buddy peers and support groups will appear here
+              {activeCategory === 'buddyPeers' 
+                ? 'Start a conversation with your buddy peers'
+                : activeCategory === 'community'
+                ? 'Connect with members of your communities'
+                : 'Reach out to other users on the platform'}
             </Text>
           </View>
         ) : (
-          chats.map((chat) => (
+          activeCategoryChats.map((chat) => (
             <Pressable
               key={chat.id}
               style={styles.chatCard}
@@ -121,11 +254,24 @@ export default function MessagesScreen() {
               <View style={styles.chatContent}>
                 {/* Avatar */}
                 <View style={styles.avatarContainer}>
-                  <View style={styles.avatar}>
-                    <FontAwesome name="user" size={24} color="#666" />
+                  <View style={[
+                    styles.avatar,
+                    activeCategory === 'buddyPeers' ? styles.buddyAvatar :
+                    activeCategory === 'community' ? styles.communityAvatar :
+                    styles.globalAvatar
+                  ]}>
+                    <FontAwesome 
+                      name={
+                        activeCategory === 'buddyPeers' ? 'heart' :
+                        activeCategory === 'community' ? 'users' : 'user'
+                      } 
+                      size={24} 
+                      color={
+                        activeCategory === 'buddyPeers' ? '#2196F3' :
+                        activeCategory === 'community' ? '#4CAF50' : '#9C27B0'
+                      } 
+                    />
                   </View>
-                  {/* Online status would come from WebSocket in the future */}
-                  {/* {isOnline && <View style={styles.onlineIndicator} />} */}
                 </View>
 
                 {/* Chat Details */}
@@ -185,6 +331,44 @@ export default function MessagesScreen() {
   );
 }
 
+// Custom hook to categorize chats
+function useCategorizedChats(
+  chats: ChatPreview[], 
+  buddyPeerIds: string[], 
+  communityMemberIds: string[]
+) {
+  // Initialize categories
+  const categorized = {
+    buddyPeers: [] as ChatPreview[],
+    community: [] as ChatPreview[],
+    global: [] as ChatPreview[]
+  };
+
+  // Categorize each chat
+  chats.forEach(chat => {
+    const participantId = chat.participant?.id;
+    
+    if (!participantId) {
+      return; // Skip if no participant (shouldn't happen)
+    }
+
+    // Check if participant is a buddy peer
+    if (buddyPeerIds.includes(participantId)) {
+      categorized.buddyPeers.push(chat);
+    }
+    // Check if participant is a community member
+    else if (communityMemberIds.includes(participantId)) {
+      categorized.community.push(chat);
+    }
+    // Otherwise, it's a global user
+    else {
+      categorized.global.push(chat);
+    }
+  });
+
+  return categorized;
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -216,6 +400,70 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
+  categoryTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  categoryTab: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    position: 'relative',
+  },
+  activeCategoryTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#2196F3',
+  },
+  categoryText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeCategoryText: {
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  categoryIcon: {
+    marginRight: 6,
+  },
+  categoryBadge: {
+    position: 'absolute',
+    top: -2,
+    right: 12,
+    backgroundColor: '#2196F3',
+    borderRadius: 10,
+    width: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  categoryHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  categoryHeaderText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  categoryCount: {
+    fontSize: 12,
+    color: '#666',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -241,7 +489,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
-    marginTop: 64,
+    marginTop: 32,
   },
   emptyStateTitle: {
     fontSize: 18,
@@ -285,16 +533,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  onlineIndicator: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: 'white',
+  buddyAvatar: {
+    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+  },
+  communityAvatar: {
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+  },
+  globalAvatar: {
+    backgroundColor: 'rgba(156, 39, 176, 0.1)',
   },
   chatDetails: {
     flex: 1,
