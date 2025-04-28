@@ -504,17 +504,17 @@ class LLMAnalysisService {
      */
     private async formatDataForLLM(data: any): Promise<string> {
         const { analysisType } = data;
-        
+
         // Generate specific prompt based on analysis type
         let prompt: string;
-        
+
         if (analysisType === 'baseline') {
             prompt = this.createBaselinePrompt(data);
         } else {
             // Default to recent analysis
             prompt = await this.createRecentAnalysisPrompt(data);
         }
-        
+
         return prompt;
     }
 
@@ -583,7 +583,7 @@ REMEMBER: This is BASELINE analysis to establish normal patterns, NOT to identif
      */
     private async createRecentAnalysisPrompt(data: any): Promise<string> {
         const { userId, healthData, checkIns, startDate, endDate } = data;
-        
+
         // For recent analysis, we'll focus on the last 3 days with recency weighting
         // Filter to get only the last 3 days of data
         const threeDay = new Date(endDate);
@@ -709,7 +709,7 @@ Only include fields in reasoningData if you have sufficient information to make 
 `;
     }
 
-// Standard prompt method removed
+    // Standard prompt method removed
 
     /**
      * Format health data and check-ins into a readable summary
@@ -803,21 +803,26 @@ Only include fields in reasoningData if you have sufficient information to make 
 
             const jsonStr = jsonMatch[0];
             const parsed = JSON.parse(jsonStr) as LLMResponse;
-            
-            // Ensure needsSupport is a boolean
-            parsed.needsSupport = !!parsed.needsSupport;
-            
+
+            // Enhanced validation for needsSupport - ADDED THIS LOGIC
+            const shouldNeedSupport = this.validateNeedsSupport(parsed);
+
+            // Force needsSupport to true if our validation indicates it should be true
+            parsed.needsSupport = shouldNeedSupport || !!parsed.needsSupport;
+
             // If needsSupport is true, ensure supportReason and supportTips are provided
             if (parsed.needsSupport) {
-                parsed.supportReason = parsed.supportReason || "User may need support based on mental health assessment";
+                parsed.supportReason = parsed.supportReason || "User may need support based on their health data";
                 parsed.supportTips = parsed.supportTips || ["Listen actively", "Encourage professional help if needed"];
             }
-            
+
             // Ensure checkInMood is a number
             if (parsed.reasoningData.checkInMood && typeof parsed.reasoningData.checkInMood !== 'number') {
                 parsed.reasoningData.checkInMood = this.convertMoodToNumber(parsed.reasoningData.checkInMood);
             }
-            
+
+            console.log(`[LLM] Parsed response: needsSupport=${parsed.needsSupport}, status=${parsed.mentalHealthStatus}`);
+
             return parsed;
         } catch (error) {
             console.error('[LLM] Error parsing LLM response:', error);
@@ -834,6 +839,70 @@ Only include fields in reasoningData if you have sufficient information to make 
                 needsSupport: false
             };
         }
+    }
+
+    // New validation method to determine if support is needed
+    private validateNeedsSupport(parsedResponse: LLMResponse): boolean {
+        // Check critical mental health status - this should always trigger support
+        if (parsedResponse.mentalHealthStatus === 'critical') {
+            console.log('[LLM] Support needed due to critical mental health status');
+            return true;
+        }
+
+        // Check for concerning check-in notes
+        const notes = parsedResponse.reasoningData.checkInNotes;
+        if (notes && this.hasDistressIndicators(notes)) {
+            console.log('[LLM] Support needed due to concerning check-in notes');
+            return true;
+        }
+
+        // Check for significant changes
+        if (parsedResponse.reasoningData.significantChanges &&
+            parsedResponse.reasoningData.significantChanges.length > 0) {
+            // If there are negative changes (containing keywords)
+            const negativeChanges = parsedResponse.reasoningData.significantChanges.filter(
+                change => this.hasNegativeIndicators(change)
+            );
+
+            if (negativeChanges.length >= 2) {
+                console.log('[LLM] Support needed due to multiple negative changes detected');
+                return true;
+            }
+        }
+
+        // Check for low mood score
+        if (parsedResponse.reasoningData.checkInMood &&
+            parsedResponse.reasoningData.checkInMood < 2.5) {
+            console.log('[LLM] Support needed due to low mood score');
+            return true;
+        }
+
+        return false;
+    }
+
+    // Helper to check for distress indicators in text
+    private hasDistressIndicators(text: string): boolean {
+        const distressKeywords = [
+            'hopeless', 'overwhelm', 'struggle', 'anxious', 'depress',
+            'stress', 'sad', 'lonely', 'isolat', 'worried', 'fear',
+            'hurt', 'pain', 'tired', 'exhaust', 'unhappy', 'help me'
+        ];
+
+        return distressKeywords.some(keyword =>
+            text.toLowerCase().includes(keyword)
+        );
+    }
+
+    // Helper to check for negative indicators in change descriptions
+    private hasNegativeIndicators(text: string): boolean {
+        const negativeKeywords = [
+            'decreas', 'decline', 'reduc', 'worse', 'less', 'lower',
+            'negative', 'drop', 'fallen', 'deteriorat'
+        ];
+
+        return negativeKeywords.some(keyword =>
+            text.toLowerCase().includes(keyword)
+        );
     }
 
     /**
@@ -893,7 +962,7 @@ Only include fields in reasoningData if you have sufficient information to make 
         };
     }
 
-// Standard analysis method removed
+    // Standard analysis method removed
 
     /**
      * Analyze recent health data (past 3 days) with recency weighting
@@ -902,50 +971,59 @@ Only include fields in reasoningData if you have sufficient information to make 
     public async analyzeRecentHealth(userId: string): Promise<LLMResponse> {
         try {
             console.log(`[LLM] Analyzing recent health (3 days) for user ${userId}`);
-
+    
             // Collect health data for the past 3 days
             const userData = await this.collectHealthData(
                 new Types.ObjectId(userId),
                 3, // Only 3 days
                 'recent'
             );
-
+    
             // Add userId to userData for baseline comparison
             userData.userId = new Types.ObjectId(userId);
-
+    
             // Pre-process data to get initial metrics
             const preprocessedData = this.preprocessData(userData);
-
+    
             // Format the data for LLM with recency weighting instructions and baseline comparison
             const prompt = await this.formatDataForLLM(userData);
-
+    
             // Query the LLM
             const llmResponse = await this.queryLLM(prompt);
-
+            
+            // Log raw response for debugging - ADD THIS
+            console.log('[LLM] Raw response:', llmResponse);
+    
             // Parse the response
             const parsedResponse = this.parseLLMResponse(llmResponse);
-
+            
+            // Log parsed response data - ADD THIS
+            console.log('[LLM] Parsed response data:', JSON.stringify({
+                mentalHealthStatus: parsedResponse.mentalHealthStatus,
+                needsSupport: parsedResponse.needsSupport,
+                confidenceScore: parsedResponse.confidenceScore
+            }));
+    
             // Merge with pre-processed data to ensure completeness
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
-
+    
             // Add baseline comparison flag
             if (!finalResponse.reasoningData.additionalFactors) {
                 finalResponse.reasoningData.additionalFactors = {};
             }
             finalResponse.reasoningData.additionalFactors.comparedToBaseline = true;
-
+    
             // Save the results to the database with analysis type
             await this.saveMentalHealthState(userId, finalResponse, 'recent');
-
+    
             console.log(`[LLM] Recent analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}, needsSupport: ${finalResponse.needsSupport}`);
-
+    
             return finalResponse;
         } catch (error) {
             console.error('[LLM] Error analyzing recent health:', error);
             throw error;
         }
     }
-
     /**
      * Establish a baseline for a user (analyzing all historical data)
      */
@@ -1017,7 +1095,7 @@ Only include fields in reasoningData if you have sufficient information to make 
             throw error;
         }
     }
-    
+
     /**
      * Merge the LLM response with pre-processed data to ensure all fields are present
      */
@@ -1063,7 +1141,19 @@ Only include fields in reasoningData if you have sufficient information to make 
                 analysis.reasoningData.additionalFactors = {};
             }
             analysis.reasoningData.additionalFactors.analysisType = analysisType;
-
+    
+            // Force needsSupport to true if mental health status is critical (additional safeguard)
+            if (analysis.mentalHealthStatus === 'critical' && !analysis.needsSupport) {
+                console.log(`[LLM] Forcing needsSupport to true for critical status user ${userId}`);
+                analysis.needsSupport = true;
+                analysis.supportReason = analysis.supportReason || "User has critical mental health status";
+                analysis.supportTips = analysis.supportTips || [
+                    "Listen actively and validate their feelings",
+                    "Encourage professional help if needed",
+                    "Check in regularly over the next few days"
+                ];
+            }
+    
             const mentalHealthState = new MentalHealthState({
                 userId: new Types.ObjectId(userId),
                 timestamp: new Date(),
@@ -1075,21 +1165,21 @@ Only include fields in reasoningData if you have sufficient information to make 
                 supportReason: analysis.supportReason || "This user might need support based on their health data",
                 supportTips: analysis.supportTips || [],
                 metadata: {
-                  analysisType: analysisType
+                    analysisType: analysisType
                 }
-              });
-
+            });
+    
             await mentalHealthState.save();
-
+    
             // Only initiate support requests for non-baseline analyses when needsSupport is true
             if (analysis.needsSupport && analysisType !== 'baseline') {
                 // Import peerSupportService to avoid circular dependencies
                 const { peerSupportService } = require('./peerSupportService');
-
+    
                 console.log(`[LLM] Mental health analysis indicates user ${userId} needs support. Initiating support request.`);
                 await peerSupportService.initiateSupportRequest(userId, mentalHealthState._id);
             }
-
+    
             return mentalHealthState;
         } catch (error) {
             console.error('[LLM] Error saving mental health state:', error);
