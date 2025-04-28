@@ -528,6 +528,13 @@ class LLMAnalysisService {
         4. Any significant changes in patterns
         5. Any risk or protective factors evident in the data
         
+        IMPORTANT RULES FOR TRIGGERING SUPPORT REQUESTS:
+        - You MUST set "needsSupport" to TRUE if ANY of these conditions are met:
+          * The user's mentalHealthStatus is "critical"
+          * Any check-in shows mood scores of 1 out of 5, for 3 straight days
+          * Check-in notes contain concerning phrases related to hopelessness, self-harm, or suicidal thoughts
+          * Multiple days of negative changes in health patterns are detected
+        
         Provide your assessment in the following JSON format (and only respond with this JSON):
         {
           "mentalHealthStatus": "stable|declining|critical",
@@ -548,7 +555,7 @@ class LLMAnalysisService {
           },
           "needsSupport": true|false,
           
-          // Only include these fields when needsSupport is true
+          // Always include these fields, with more detailed content when needsSupport is true
           "supportReason": "A brief, clear explanation of why this user needs support based on their health data",
           "supportTips": [
             "2-3 specific, actionable tips for the person providing support"
@@ -563,6 +570,8 @@ class LLMAnalysisService {
         For checkInMood:
         - Use a numeric scale from 1-5 where 1=Very Poor, 3=Neutral, 5=Very Good
         - Do NOT use string labels like "good" or "poor" for this field
+        
+        VALIDATION CHECK: Before finalizing your response, verify that if you've identified any concerns in the data, needsSupport is set to TRUE.
         
         When needsSupport is true:
         - Include a supportReason that clearly explains the concerning patterns in 1-2 sentences

@@ -15,8 +15,8 @@ export default function SupportRequestsSection() {
   useEffect(() => {
     fetchSupportRequests();
     
-    // Refresh every 2 minutes
-    const interval = setInterval(fetchSupportRequests, 2 * 60 * 1000);
+    // Refresh every 30 seconds for better testing
+    const interval = setInterval(fetchSupportRequests, 30 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,11 +41,7 @@ export default function SupportRequestsSection() {
     }
   };
 
-  // Don't show if there are no requests
   const totalRequests = buddyRequests + communityRequests + globalRequests;
-  if (totalRequests === 0 && !isLoading) {
-    return null;
-  }
 
   return (
     <View style={styles.supportCard}>
@@ -59,6 +55,10 @@ export default function SupportRequestsSection() {
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#2196F3" />
+        </View>
+      ) : totalRequests === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No active support requests</Text>
         </View>
       ) : (
         <View style={styles.supportOptions}>
@@ -179,5 +179,15 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  emptyContainer: {
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });

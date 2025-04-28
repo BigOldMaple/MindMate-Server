@@ -30,7 +30,10 @@ export default function BuddySupportScreen() {
   const fetchSupportRequests = async () => {
     try {
       setIsLoading(true);
+      console.log('Fetching buddy support requests...');
       const requests = await mentalHealthApi.getBuddySupportRequests();
+      console.log(`Received ${requests.length} buddy support requests`);
+      console.log(JSON.stringify(requests, null, 2));
       setSupportRequests(requests);
     } catch (error) {
       console.error('Failed to fetch support requests:', error);

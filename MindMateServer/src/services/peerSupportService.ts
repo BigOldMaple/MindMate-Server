@@ -725,9 +725,14 @@ class PeerSupportService {
         needsSupport: true,
         ...additionalQuery
       })
-        .populate('userId', 'username profile.name')
+        .populate({
+          path: 'userId',
+          select: 'username profile.name'
+        })
         .sort({ supportRequestTime: 1 })
         .lean();
+      
+      console.log(`[PeerSupport] Found ${requests.length} ${tier} support requests for user ${userId}`);
       
       return requests;
     } catch (error) {
