@@ -19,10 +19,10 @@ export default function CommunitySupportScreen() {
 
   useEffect(() => {
     fetchSupportRequests();
-    
+
     // Set up refresh interval (every 60 seconds)
     const refreshInterval = setInterval(fetchSupportRequests, 60000);
-    
+
     // Clean up interval on unmount
     return () => clearInterval(refreshInterval);
   }, []);
@@ -53,13 +53,19 @@ export default function CommunitySupportScreen() {
               try {
                 // 1. Provide support
                 await mentalHealthApi.provideSupport(assessmentId);
-                
+
                 // 2. Get or create conversation
                 const conversationId = await chatApi.createConversation(userId);
-                
-                // 3. Navigate with conversation ID instead of username
+
+                // 3. Send a system message about the peer support context
+                await chatApi.sendMessage(conversationId, {
+                  content: `You responded to ${username}'s peer support request`,
+                  contentType: 'system' // New message type for system messages
+                });
+
+                // 4. Navigate to the conversation
                 router.push(`/messages/${conversationId}`);
-                
+
                 Alert.alert('Success', 'You have offered your support');
                 fetchSupportRequests();
               } catch (error) {
@@ -84,24 +90,24 @@ export default function CommunitySupportScreen() {
       declining: '#FFC107',
       critical: '#F44336'
     };
-    
+
     // Format time ago
     const getTimeAgo = (timestamp: string) => {
       const date = new Date(timestamp);
       const now = new Date();
       const diff = now.getTime() - date.getTime();
       const minutes = Math.floor(diff / 60000);
-      
+
       if (minutes < 1) return 'just now';
       if (minutes < 60) return `${minutes} min ago`;
-      
+
       const hours = Math.floor(minutes / 60);
       if (hours < 24) return `${hours} hr ago`;
-      
+
       const days = Math.floor(hours / 24);
       return `${days} day${days > 1 ? 's' : ''} ago`;
     };
-    
+
     const timeAgo = getTimeAgo(item.supportRequestTime);
 
     return (
@@ -133,7 +139,7 @@ export default function CommunitySupportScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ 
+      <Stack.Screen options={{
         title: 'Community Support Requests',
         headerShown: true
       }} />

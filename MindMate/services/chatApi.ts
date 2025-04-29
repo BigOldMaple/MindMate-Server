@@ -16,7 +16,7 @@ export interface ChatMessage {
         };
     };
     content: string;
-    contentType: 'text' | 'image' | 'file';
+    contentType: 'text' | 'image' | 'file' | 'system';
     metadata?: {
         fileName?: string;
         fileSize?: number;
@@ -58,7 +58,7 @@ export interface ChatPreview {
 
 export interface SendMessageInput {
     content: string;
-    contentType?: 'text' | 'image' | 'file';
+    contentType?: 'text' | 'image' | 'file' | 'system';
     replyTo?: string;
     metadata?: {
         fileName?: string;

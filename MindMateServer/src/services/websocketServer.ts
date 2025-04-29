@@ -120,7 +120,7 @@ class WebSocketServer {
         conversationId,
         senderId: ws.userId,
         content,
-        contentType: 'text',
+        contentType: payload.contentType || 'text', // Support different content types
         readBy: [{ userId: ws.userId, readAt: new Date() }]
       });
 

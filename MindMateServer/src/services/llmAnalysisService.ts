@@ -95,7 +95,7 @@ class LLMAnalysisService {
                 prompt,
                 stream: false,
                 options: {
-                    temperature: 0.15, // Lower temperature for more deterministic outputs
+                    temperature: 0.10, // Lower temperature for more deterministic outputs
                     top_p: 0.9
                 }
             });
@@ -789,57 +789,221 @@ Only include fields in reasoningData if you have sufficient information to make 
         return summary;
     }
 
-    /**
-     * Parse the LLM response to extract structured data
-     */
-    private parseLLMResponse(response: string): LLMResponse {
+ /**
+ * Parse the LLM response to extract structured data
+ * This improved parser handles structural issues in the JSON, particularly when properties
+ * appear at incorrect nesting levels
+ */
+private parseLLMResponse(response: string): LLMResponse {
+    try {
+        // Extract JSON from the response
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+
+        if (!jsonMatch) {
+            throw new Error('No valid JSON found in LLM response');
+        }
+
+        let jsonStr = jsonMatch[0];
+        
+        // Log the original JSON for debugging
+        console.log('[LLM] Original JSON structure (first 100 chars):', jsonStr.substring(0, 100) + '...');
+        
         try {
-            // Extract JSON from the response
-            const jsonMatch = response.match(/\{[\s\S]*\}/);
-
-            if (!jsonMatch) {
-                throw new Error('No valid JSON found in LLM response');
+            // First try parsing as-is
+            return JSON.parse(jsonStr) as LLMResponse;
+        } catch (parseError) {
+            console.error('[LLM] Initial JSON parse error:', parseError);
+            
+            // Specific fix for the most common issue: needsSupport inside reasoningData
+            if (jsonStr.includes('"reasoningData"') && 
+                jsonStr.includes('"needsSupport"')) {
+                
+                console.log('[LLM] Attempting to fix LLM response structure...');
+                
+                // Check if needsSupport might be inside reasoningData
+                const reasoningDataIndex = jsonStr.indexOf('"reasoningData"');
+                const needsSupportIndex = jsonStr.indexOf('"needsSupport"');
+                
+                if (reasoningDataIndex > -1 && needsSupportIndex > reasoningDataIndex) {
+                    // This means needsSupport appears after reasoningData starts
+                    
+                    // First, identify where additionalFactors ends (if it exists)
+                    const additionalFactorsIndex = jsonStr.indexOf('"additionalFactors"');
+                    if (additionalFactorsIndex > -1 && additionalFactorsIndex < needsSupportIndex) {
+                        // Explicitly reconstruct the JSON with proper structure
+                        const beforeReasoningData = jsonStr.substring(0, reasoningDataIndex);
+                        
+                        // Get the content of reasoningData by finding where it should end
+                        const startOfReasoning = jsonStr.indexOf('{', reasoningDataIndex);
+                        
+                        // Find position of the last closing brace before needsSupport
+                        let braceSearchPosition = needsSupportIndex;
+                        while (braceSearchPosition > startOfReasoning) {
+                            braceSearchPosition--;
+                            if (jsonStr[braceSearchPosition] === '}') {
+                                break;
+                            }
+                        }
+                        
+                        // If we found a closing brace, this is where reasoningData should end
+                        const reasoningDataContent = jsonStr.substring(
+                            startOfReasoning, 
+                            braceSearchPosition + 1
+                        );
+                        
+                        // The remaining content after reasoningData
+                        const afterReasoningData = jsonStr.substring(needsSupportIndex - 1);
+                        
+                        // Reconstruct the JSON with proper structure
+                        jsonStr = beforeReasoningData + 
+                                '"reasoningData": ' + reasoningDataContent + 
+                                ', ' + // Add comma to separate properties
+                                afterReasoningData;
+                        
+                        console.log('[LLM] Restructured JSON to fix needsSupport positioning');
+                    }
+                }
+                
+                // If we still have issues with JSON structure, try more general fixes
+                try {
+                    // Try parsing after restructuring
+                    return JSON.parse(jsonStr) as LLMResponse;
+                } catch (secondError) {
+                    console.log('[LLM] Additional fixes needed after restructuring');
+                    
+                    // Fall back to using a regex-based approach to extract key fields if needed
+                    const mentalHealthStatus = this.extractField(jsonStr, "mentalHealthStatus") || "stable";
+                    const confidenceScoreStr = this.extractField(jsonStr, "confidenceScore") || "0.5";
+                    const confidenceScore = parseFloat(confidenceScoreStr);
+                    const needsSupportStr = this.extractField(jsonStr, "needsSupport") || "false";
+                    const needsSupport = needsSupportStr.toLowerCase() === "true";
+                    
+                    // Try to extract reasoning data
+                    const sleepQuality = this.extractNestedField(jsonStr, "reasoningData", "sleepQuality");
+                    const activityLevel = this.extractNestedField(jsonStr, "reasoningData", "activityLevel");
+                    const checkInMood = this.extractNestedField(jsonStr, "reasoningData", "checkInMood");
+                    let checkInMoodValue: number | undefined;
+                    
+                    if (checkInMood) {
+                        checkInMoodValue = parseFloat(checkInMood);
+                        if (isNaN(checkInMoodValue)) {
+                            checkInMoodValue = this.convertMoodToNumber(checkInMood);
+                        }
+                    }
+                    
+                    // Extract supportReason
+                    const supportReason = this.extractField(jsonStr, "supportReason");
+                    
+                    // Try to extract supportTips array
+                    const supportTips: string[] = [];
+                    const tipsMatch = jsonStr.match(/"supportTips"\s*:\s*\[([\s\S]*?)\]/);
+                    if (tipsMatch && tipsMatch[1]) {
+                        const tipsContent = tipsMatch[1];
+                        // Use regex to extract each string in the array
+                        const tipRegex = /"([^"]*)"/g;
+                        let tipMatch;
+                        while ((tipMatch = tipRegex.exec(tipsContent)) !== null) {
+                            supportTips.push(tipMatch[1]);
+                        }
+                    }
+                    
+                    console.log('[LLM] Extracted fields directly: status=' + 
+                                mentalHealthStatus + 
+                                ', needsSupport=' + needsSupport);
+                    
+                    // Construct a valid LLMResponse object from extracted fields
+                    return {
+                        mentalHealthStatus: mentalHealthStatus as 'stable' | 'declining' | 'critical',
+                        confidenceScore: isNaN(confidenceScore) ? 0.5 : confidenceScore,
+                        reasoningData: {
+                            sleepQuality: sleepQuality as 'poor' | 'fair' | 'good' | undefined,
+                            activityLevel: activityLevel as 'low' | 'moderate' | 'high' | undefined,
+                            checkInMood: checkInMoodValue,
+                            significantChanges: [],
+                            additionalFactors: {
+                                extraction: "Direct field extraction was used due to JSON parsing issues"
+                            }
+                        },
+                        needsSupport: needsSupport,
+                        supportReason: supportReason,
+                        supportTips: supportTips.length > 0 ? supportTips : undefined
+                    };
+                }
             }
-
-            const jsonStr = jsonMatch[0];
-            const parsed = JSON.parse(jsonStr) as LLMResponse;
-
-            // Enhanced validation for needsSupport - ADDED THIS LOGIC
-            const shouldNeedSupport = this.validateNeedsSupport(parsed);
-
-            // Force needsSupport to true if our validation indicates it should be true
-            parsed.needsSupport = shouldNeedSupport || !!parsed.needsSupport;
-
-            // If needsSupport is true, ensure supportReason and supportTips are provided
-            if (parsed.needsSupport) {
-                parsed.supportReason = parsed.supportReason || "User may need support based on their health data";
-                parsed.supportTips = parsed.supportTips || ["Listen actively", "Encourage professional help if needed"];
-            }
-
-            // Ensure checkInMood is a number
-            if (parsed.reasoningData.checkInMood && typeof parsed.reasoningData.checkInMood !== 'number') {
-                parsed.reasoningData.checkInMood = this.convertMoodToNumber(parsed.reasoningData.checkInMood);
-            }
-
-            console.log(`[LLM] Parsed response: needsSupport=${parsed.needsSupport}, status=${parsed.mentalHealthStatus}`);
-
-            return parsed;
-        } catch (error) {
-            console.error('[LLM] Error parsing LLM response:', error);
-            // Return a default response for error handling
+            
+            // If we can't fix it with specific patterns, create a default response
+            console.error('[LLM] Failed to parse or repair JSON:', parseError);
+            // Safe error message extraction for unknown type
+            const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+            
             return {
                 mentalHealthStatus: 'stable',
                 confidenceScore: 0.5,
                 reasoningData: {
                     significantChanges: ['LLM parsing error'],
                     additionalFactors: {
-                        error: 'Unable to analyze data properly'
+                        error: 'Unable to analyze data properly',
+                        details: errorMessage
                     }
                 },
                 needsSupport: false
             };
         }
+    } catch (error) {
+        console.error('[LLM] Error in parseLLMResponse:', error);
+        return {
+            mentalHealthStatus: 'stable',
+            confidenceScore: 0.5,
+            reasoningData: {
+                significantChanges: ['LLM processing error'],
+                additionalFactors: {
+                    error: 'Error in LLM response processing',
+                    details: error instanceof Error ? error.message : 'Unknown error'
+                }
+            },
+            needsSupport: false
+        };
     }
+}
+
+/**
+ * Helper function to extract a field from JSON using regex
+ * Used when JSON.parse fails
+ */
+private extractField(jsonStr: string, fieldName: string): string | undefined {
+    const regex = new RegExp(`"${fieldName}"\\s*:\\s*"?([^",}\\]]*)"?`);
+    const match = jsonStr.match(regex);
+    return match ? match[1].trim() : undefined;
+}
+
+/**
+ * Helper function to extract a nested field from JSON using regex
+ */
+private extractNestedField(jsonStr: string, parentField: string, fieldName: string): string | undefined {
+    // Find the parent field first
+    const parentStart = jsonStr.indexOf(`"${parentField}"`);
+    if (parentStart === -1) return undefined;
+    
+    // Find the opening brace after the parent field
+    const braceStart = jsonStr.indexOf('{', parentStart);
+    if (braceStart === -1) return undefined;
+    
+    // Extract the content between braces (this is naive but works for simple cases)
+    let braceCount = 1;
+    let braceEnd = braceStart + 1;
+    
+    while (braceCount > 0 && braceEnd < jsonStr.length) {
+        if (jsonStr[braceEnd] === '{') braceCount++;
+        if (jsonStr[braceEnd] === '}') braceCount--;
+        braceEnd++;
+    }
+    
+    // Get the parent object content
+    const parentContent = jsonStr.substring(braceStart, braceEnd);
+    
+    // Now extract the field from the parent content
+    return this.extractField(parentContent, fieldName);
+}
 
     // New validation method to determine if support is needed
     private validateNeedsSupport(parsedResponse: LLMResponse): boolean {
@@ -971,53 +1135,53 @@ Only include fields in reasoningData if you have sufficient information to make 
     public async analyzeRecentHealth(userId: string): Promise<LLMResponse> {
         try {
             console.log(`[LLM] Analyzing recent health (3 days) for user ${userId}`);
-    
+
             // Collect health data for the past 3 days
             const userData = await this.collectHealthData(
                 new Types.ObjectId(userId),
                 3, // Only 3 days
                 'recent'
             );
-    
+
             // Add userId to userData for baseline comparison
             userData.userId = new Types.ObjectId(userId);
-    
+
             // Pre-process data to get initial metrics
             const preprocessedData = this.preprocessData(userData);
-    
+
             // Format the data for LLM with recency weighting instructions and baseline comparison
             const prompt = await this.formatDataForLLM(userData);
-    
+
             // Query the LLM
             const llmResponse = await this.queryLLM(prompt);
-            
+
             // Log raw response for debugging - ADD THIS
             console.log('[LLM] Raw response:', llmResponse);
-    
+
             // Parse the response
             const parsedResponse = this.parseLLMResponse(llmResponse);
-            
+
             // Log parsed response data - ADD THIS
             console.log('[LLM] Parsed response data:', JSON.stringify({
                 mentalHealthStatus: parsedResponse.mentalHealthStatus,
                 needsSupport: parsedResponse.needsSupport,
                 confidenceScore: parsedResponse.confidenceScore
             }));
-    
+
             // Merge with pre-processed data to ensure completeness
             const finalResponse = this.mergeResponses(parsedResponse, preprocessedData);
-    
+
             // Add baseline comparison flag
             if (!finalResponse.reasoningData.additionalFactors) {
                 finalResponse.reasoningData.additionalFactors = {};
             }
             finalResponse.reasoningData.additionalFactors.comparedToBaseline = true;
-    
+
             // Save the results to the database with analysis type
             await this.saveMentalHealthState(userId, finalResponse, 'recent');
-    
+
             console.log(`[LLM] Recent analysis completed for user ${userId}: ${finalResponse.mentalHealthStatus}, needsSupport: ${finalResponse.needsSupport}`);
-    
+
             return finalResponse;
         } catch (error) {
             console.error('[LLM] Error analyzing recent health:', error);
@@ -1141,7 +1305,7 @@ Only include fields in reasoningData if you have sufficient information to make 
                 analysis.reasoningData.additionalFactors = {};
             }
             analysis.reasoningData.additionalFactors.analysisType = analysisType;
-    
+
             // Force needsSupport to true if mental health status is critical (additional safeguard)
             if (analysis.mentalHealthStatus === 'critical' && !analysis.needsSupport) {
                 console.log(`[LLM] Forcing needsSupport to true for critical status user ${userId}`);
@@ -1153,7 +1317,7 @@ Only include fields in reasoningData if you have sufficient information to make 
                     "Check in regularly over the next few days"
                 ];
             }
-    
+
             const mentalHealthState = new MentalHealthState({
                 userId: new Types.ObjectId(userId),
                 timestamp: new Date(),
@@ -1168,18 +1332,18 @@ Only include fields in reasoningData if you have sufficient information to make 
                     analysisType: analysisType
                 }
             });
-    
+
             await mentalHealthState.save();
-    
+
             // Only initiate support requests for non-baseline analyses when needsSupport is true
             if (analysis.needsSupport && analysisType !== 'baseline') {
                 // Import peerSupportService to avoid circular dependencies
                 const { peerSupportService } = require('./peerSupportService');
-    
+
                 console.log(`[LLM] Mental health analysis indicates user ${userId} needs support. Initiating support request.`);
                 await peerSupportService.initiateSupportRequest(userId, mentalHealthState._id);
             }
-    
+
             return mentalHealthState;
         } catch (error) {
             console.error('[LLM] Error saving mental health state:', error);

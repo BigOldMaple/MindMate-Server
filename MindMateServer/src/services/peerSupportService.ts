@@ -47,7 +47,7 @@ class PeerSupportService {
 
   // Track scheduled timeouts to allow cancellation
   private supportTimeouts: Map<string, NodeJS.Timeout> = new Map();
-  
+
   /**
    * Initiate the tiered support request system
    */
@@ -58,11 +58,11 @@ class PeerSupportService {
         .select('buddyPeers communities')
         .populate('buddyPeers.userId')
         .lean<UserLean>();
-        
+
       if (!user) {
         throw new Error('User not found');
       }
-      
+
       if (!user.buddyPeers || user.buddyPeers.length === 0) {
         // No buddy peers, update the support request status to reflect this
         await MentalHealthState.findByIdAndUpdate(assessmentId, {
@@ -82,17 +82,39 @@ class PeerSupportService {
             supportRequestTime: new Date()
           }
         });
-        
-        // Send notifications to buddy peers
-        const buddyIds = user.buddyPeers.map((buddy) => buddy.userId.toString());
-        await this.notifyBuddyPeers(userId, assessmentId, buddyIds);
-        
-        // Schedule escalation if no response within timeout
-        this.scheduleEscalation(userId, assessmentId, 'buddy', user.communities || []);
+
+        // Extract valid buddy IDs correctly from the populated user document
+        const buddyIds: string[] = [];
+
+        for (const buddy of user.buddyPeers) {
+          // Handle both populated and unpopulated cases
+          if (buddy.userId) {
+            if (typeof buddy.userId === 'string') {
+              // If it's already a string ID
+              buddyIds.push(buddy.userId);
+            } else if (buddy.userId._id) {
+              // If it's a populated object with _id
+              buddyIds.push(buddy.userId._id.toString());
+            }
+          }
+        }
+
+        console.log(`[PeerSupport] Found ${buddyIds.length} valid buddy IDs for user ${userId}`);
+
+        if (buddyIds.length > 0) {
+          await this.notifyBuddyPeers(userId, assessmentId, buddyIds);
+
+          // Schedule escalation if no response within timeout
+          this.scheduleEscalation(userId, assessmentId, 'buddy', user.communities || []);
+        } else {
+          // No valid buddy IDs found, escalate to community tier
+          console.log(`[PeerSupport] No valid buddy IDs found for user ${userId}, escalating to community tier`);
+          await this.requestCommunitySupport(userId, assessmentId, user.communities || []);
+        }
       }
     } catch (error) {
       console.error('[PeerSupport] Error initiating support request:', error);
-      throw error;
+      // Don't rethrow - we should continue even if buddy notification fails
     }
   }
 
@@ -100,43 +122,64 @@ class PeerSupportService {
    * Notify buddy peers about a support request
    */
   private async notifyBuddyPeers(
-    userId: string, 
-    assessmentId: Types.ObjectId, 
+    userId: string | Types.ObjectId,
+    assessmentId: Types.ObjectId,
     buddyIds: string[]
   ): Promise<void> {
     try {
+      let validNotifications = 0;
+      let invalidIds = 0;
+
       for (const buddyId of buddyIds) {
-        // Create database notification
-        const notification = new Notification({
-          userId: buddyId,
-          type: 'support',
-          title: 'Support Request',
-          message: 'Someone in your support network might need help',
-          read: false,
-          time: new Date(),
-          actionable: true,
-          actionRoute: '/buddy-support',
-          actionParams: { assessmentId: assessmentId.toString() },
-          relatedId: assessmentId
-        });
-        await notification.save();
-        
-        // Send push notification
-        await pushNotificationService.sendToUser(
-          buddyId,
-          'Support Request',
-          'Someone in your support network might need help',
-          {
-            type: 'support',
-            actionRoute: '/buddy-support',
-            relatedId: assessmentId
+        try {
+          // Ensure buddyId is a valid string
+          const validBuddyId = String(buddyId).trim();
+
+          // Validate that we have a valid MongoDB ObjectId string (24-character hex string)
+          if (!validBuddyId.match(/^[0-9a-fA-F]{24}$/)) {
+            console.warn(`[PeerSupport] Invalid buddy ID format: ${validBuddyId}`);
+            invalidIds++;
+            continue; // Skip this buddy
           }
-        );
-        
-        console.log(`[PeerSupport] Notified buddy ${buddyId} for user ${userId}`);
+
+          // Create database notification with proper ObjectId conversion
+          const notification = new Notification({
+            userId: new Types.ObjectId(validBuddyId),
+            type: 'support',
+            title: 'Support Request',
+            message: 'Someone in your support network might need help',
+            read: false,
+            time: new Date(),
+            actionable: true,
+            actionRoute: '/buddy-support',
+            actionParams: { assessmentId: assessmentId.toString() },
+            relatedId: assessmentId
+          });
+          await notification.save();
+
+          // Send push notification
+          await pushNotificationService.sendToUser(
+            validBuddyId,
+            'Support Request',
+            'Someone in your support network might need help',
+            {
+              type: 'support',
+              actionRoute: '/buddy-support',
+              relatedId: assessmentId
+            }
+          );
+
+          validNotifications++;
+          console.log(`[PeerSupport] Notified buddy ${validBuddyId} for user ${userId}`);
+        } catch (buddyError) {
+          console.error(`[PeerSupport] Error notifying buddy ${buddyId}:`, buddyError);
+          // Continue with next buddy instead of failing completely
+        }
       }
+
+      console.log(`[PeerSupport] Notification summary: ${validNotifications} successful, ${invalidIds} invalid IDs skipped`);
     } catch (error) {
-      console.error('[PeerSupport] Error notifying buddy peers:', error);
+      console.error('[PeerSupport] Error in notifyBuddyPeers:', error);
     }
   }
 
@@ -144,9 +187,9 @@ class PeerSupportService {
    * Request support from community members
    */
   private async requestCommunitySupport(
-    userId: string, 
+    userId: string,
     assessmentId: Types.ObjectId,
-    userCommunities: Array<{communityId: Types.ObjectId; role: string; joinDate: Date}>
+    userCommunities: Array<{ communityId: Types.ObjectId; role: string; joinDate: Date }>
   ): Promise<void> {
     try {
       // Update the assessment status
@@ -156,39 +199,39 @@ class PeerSupportService {
           supportRequestTime: new Date()
         }
       });
-      
+
       if (userCommunities.length === 0) {
         // No communities, escalate to global tier
         console.log(`[PeerSupport] User ${userId} has no communities, escalating to global tier`);
         await this.requestGlobalSupport(userId, assessmentId);
         return;
       }
-      
+
       // Get unique community IDs
       const communityIds = userCommunities.map(comm => comm.communityId.toString());
-      
+
       // Find all users in these communities except the user needing help and buddy peers who already were notified
-      const buddyPeers = await User.findById(userId).select('buddyPeers').lean<{ buddyPeers: Array<{userId: Types.ObjectId}> }>();
+      const buddyPeers = await User.findById(userId).select('buddyPeers').lean<{ buddyPeers: Array<{ userId: Types.ObjectId }> }>();
       const buddyPeerIds = buddyPeers?.buddyPeers?.map(buddy => buddy.userId.toString()) || [];
-      
+
       const communityMembers = await User.find({
-        _id: { 
+        _id: {
           $ne: new Types.ObjectId(userId),
           $nin: buddyPeerIds.map(id => new Types.ObjectId(id))
         },
         'communities.communityId': { $in: communityIds.map(id => new Types.ObjectId(id)) }
       }).select('_id').lean<CommunityMember[]>();
-      
+
       // Get unique user IDs
       const memberIds = Array.from(new Set(communityMembers.map(member => member._id.toString())));
-      
+
       if (memberIds.length === 0) {
         // No community members other than buddies who were already notified, escalate to global tier
         console.log(`[PeerSupport] No additional community members found, escalating to global tier`);
         await this.requestGlobalSupport(userId, assessmentId);
         return;
       }
-      
+
       // Notify community members
       for (const memberId of memberIds) {
         // Create database notification
@@ -205,7 +248,7 @@ class PeerSupportService {
           relatedId: assessmentId
         });
         await notification.save();
-        
+
         // Send push notification
         await pushNotificationService.sendToUser(
           memberId,
@@ -218,9 +261,9 @@ class PeerSupportService {
           }
         );
       }
-      
+
       console.log(`[PeerSupport] Notified ${memberIds.length} community members for user ${userId}`);
-      
+
       // Schedule escalation if no response within timeout
       this.scheduleEscalation(userId, assessmentId, 'community', []);
     } catch (error) {
@@ -240,43 +283,43 @@ class PeerSupportService {
           supportRequestTime: new Date()
         }
       });
-      
+
       // Get all users except the requesting user, buddy peers, and community members already notified
       const user = await User.findById(userId).select('buddyPeers communities').lean<UserLean>();
       const buddyPeerIds = user?.buddyPeers?.map(buddy => buddy.userId.toString()) || [];
       const communityIds = user?.communities?.map(comm => comm.communityId.toString()) || [];
-      
+
       // Find members of user's communities to exclude
       let communityMemberIds: string[] = [];
       if (communityIds.length > 0) {
         const communityMembers = await User.find({
           'communities.communityId': { $in: communityIds.map(id => new Types.ObjectId(id)) }
         }).select('_id').lean<CommunityMember[]>();
-        
+
         communityMemberIds = communityMembers.map(member => member._id.toString());
       }
-      
+
       // Create exclusion list combining user, buddies, and community members
       const excludeIds = Array.from(new Set([
         userId,
         ...buddyPeerIds,
         ...communityMemberIds
       ]));
-      
+
       // Find all other users for global support
       const globalUsers = await User.find({
         _id: { $nin: excludeIds.map(id => new Types.ObjectId(id)) }
       }).select('_id').lean<CommunityMember[]>();
-      
+
       if (globalUsers.length === 0) {
         console.log(`[PeerSupport] No global users found to notify for user ${userId}`);
         return;
       }
-      
+
       // Send notifications in batches to avoid overloading
       this.sendGlobalNotificationsInBatches(
-        userId, 
-        assessmentId, 
+        userId,
+        assessmentId,
         globalUsers.map(user => user._id.toString())
       );
     } catch (error) {
@@ -288,8 +331,8 @@ class PeerSupportService {
    * Send notifications to global users in batches
    */
   private sendGlobalNotificationsInBatches(
-    userId: string, 
-    assessmentId: Types.ObjectId, 
+    userId: string,
+    assessmentId: Types.ObjectId,
     userIds: string[]
   ): void {
     // Create batches of users
@@ -297,26 +340,26 @@ class PeerSupportService {
     for (let i = 0; i < userIds.length; i += this.GLOBAL_NOTIFICATION_BATCH_SIZE) {
       batches.push(userIds.slice(i, i + this.GLOBAL_NOTIFICATION_BATCH_SIZE));
     }
-    
+
     console.log(`[PeerSupport] Sending global notifications in ${batches.length} batches for user ${userId}`);
-    
+
     // Function to process a batch
     const processBatch = async (batchIndex: number) => {
       if (batchIndex >= batches.length) {
         console.log(`[PeerSupport] All global notification batches sent for user ${userId}`);
         return;
       }
-      
+
       // Check if support has already been provided
       const assessment = await MentalHealthState.findById(assessmentId).lean<MentalHealthStateLean>();
       if (assessment?.supportRequestStatus === 'supportProvided') {
         console.log(`[PeerSupport] Support already provided for assessment ${assessmentId}, stopping further notifications`);
         return;
       }
-      
+
       const batch = batches[batchIndex];
       console.log(`[PeerSupport] Sending batch ${batchIndex + 1}/${batches.length} with ${batch.length} users for user ${userId}`);
-      
+
       // Send notifications to this batch
       for (const recipientId of batch) {
         // Create database notification
@@ -333,7 +376,7 @@ class PeerSupportService {
           relatedId: assessmentId
         });
         await notification.save();
-        
+
         // Send push notification
         await pushNotificationService.sendToUser(
           recipientId,
@@ -346,13 +389,13 @@ class PeerSupportService {
           }
         );
       }
-      
+
       // Schedule the next batch
       setTimeout(() => {
         processBatch(batchIndex + 1);
       }, this.GLOBAL_NOTIFICATION_INTERVAL_MS);
     };
-    
+
     // Start processing the first batch
     processBatch(0);
   }
@@ -361,25 +404,25 @@ class PeerSupportService {
    * Schedule escalation to the next tier after timeout
    */
   private scheduleEscalation(
-    userId: string, 
-    assessmentId: Types.ObjectId, 
+    userId: string,
+    assessmentId: Types.ObjectId,
     currentTier: 'buddy' | 'community',
-    communities: Array<{communityId: Types.ObjectId; role: string; joinDate: Date}>
+    communities: Array<{ communityId: Types.ObjectId; role: string; joinDate: Date }>
   ): void {
     // Calculate timeout based on current tier
-    const timeout = currentTier === 'buddy' 
-      ? this.BUDDY_TIER_TIMEOUT_MS 
+    const timeout = currentTier === 'buddy'
+      ? this.BUDDY_TIER_TIMEOUT_MS
       : this.COMMUNITY_TIER_TIMEOUT_MS;
-    
+
     // Generate a unique key for this timeout
     const timeoutKey = `${assessmentId.toString()}-${currentTier}`;
-    
+
     // Clear any existing timeout with this key
     if (this.supportTimeouts.has(timeoutKey)) {
       clearTimeout(this.supportTimeouts.get(timeoutKey));
       this.supportTimeouts.delete(timeoutKey);
     }
-    
+
     // Schedule the escalation
     const timeoutId = setTimeout(async () => {
       try {
@@ -389,34 +432,34 @@ class PeerSupportService {
           console.log(`[PeerSupport] Support already provided for assessment ${assessmentId}, no escalation needed`);
           return;
         }
-        
+
         console.log(`[PeerSupport] Escalating from ${currentTier} tier for user ${userId} after timeout`);
-        
+
         // Escalate to the next tier
         if (currentTier === 'buddy') {
           await this.requestCommunitySupport(userId, assessmentId, communities);
         } else if (currentTier === 'community') {
           await this.requestGlobalSupport(userId, assessmentId);
         }
-        
+
         // Remove this timeout from the map
         this.supportTimeouts.delete(timeoutKey);
       } catch (error) {
         console.error(`[PeerSupport] Error during escalation from ${currentTier} tier:`, error);
       }
     }, timeout);
-    
+
     // Store the timeout ID for potential cancellation
     this.supportTimeouts.set(timeoutKey, timeoutId);
-    
-    console.log(`[PeerSupport] Scheduled escalation from ${currentTier} tier for user ${userId} in ${timeout/60000} minutes`);
+
+    console.log(`[PeerSupport] Scheduled escalation from ${currentTier} tier for user ${userId} in ${timeout / 60000} minutes`);
   }
 
   /**
    * Record when support has been provided
    */
   public async recordSupportProvided(
-    assessmentId: Types.ObjectId, 
+    assessmentId: Types.ObjectId,
     supportProviderId: string
   ): Promise<boolean> {
     try {
@@ -432,42 +475,42 @@ class PeerSupportService {
         },
         { new: true }
       );
-      
+
       if (!result) {
         console.error(`[PeerSupport] Assessment ${assessmentId} not found when recording support`);
         return false;
       }
-      
+
       // Cancel any pending escalations
       const buddyTimeoutKey = `${assessmentId.toString()}-buddy`;
       const communityTimeoutKey = `${assessmentId.toString()}-community`;
-      
+
       if (this.supportTimeouts.has(buddyTimeoutKey)) {
         clearTimeout(this.supportTimeouts.get(buddyTimeoutKey)!);
         this.supportTimeouts.delete(buddyTimeoutKey);
       }
-      
+
       if (this.supportTimeouts.has(communityTimeoutKey)) {
         clearTimeout(this.supportTimeouts.get(communityTimeoutKey)!);
         this.supportTimeouts.delete(communityTimeoutKey);
       }
-      
+
       console.log(`[PeerSupport] Support provided by user ${supportProviderId} for assessment ${assessmentId}`);
-      
+
       // Update support statistics
       await this.updateSupportStatistics(assessmentId, supportProviderId);
-      
+
       // Notify the user in need that someone has offered support
       const userId = result.userId.toString();
       await this.notifySupportProvided(userId, supportProviderId);
-      
+
       return true;
     } catch (error) {
       console.error('[PeerSupport] Error recording support provided:', error);
       return false;
     }
   }
-  
+
   /**
    * Update support statistics when support is provided
    */
@@ -488,10 +531,10 @@ class PeerSupportService {
 
       // Update provider statistics
       await this.updateProviderStats(supportProviderId, supportTier, recipientId, assessmentId);
-      
+
       // Update recipient statistics
       await this.updateRecipientStats(recipientId, supportTier, supportProviderId, assessmentId);
-      
+
       console.log(`[PeerSupport] Updated support statistics for provider ${supportProviderId} and recipient ${recipientId}`);
     } catch (error) {
       console.error('[PeerSupport] Error updating support statistics:', error);
@@ -510,10 +553,10 @@ class PeerSupportService {
     try {
       // Import SupportStatistics to avoid circular dependencies
       const { SupportStatistics } = require('../Database/SupportStatisticsSchema');
-      
+
       // Get or create provider stats document
       let providerStats = await SupportStatistics.findOne({ userId: new Types.ObjectId(providerId) });
-      
+
       if (!providerStats) {
         providerStats = new SupportStatistics({
           userId: new Types.ObjectId(providerId),
@@ -534,21 +577,21 @@ class PeerSupportService {
           supportHistory: []
         });
       }
-      
+
       // Update provided support counters
       providerStats.supportProvided.total += 1;
       providerStats.supportProvided[`${tier}Tier`] += 1;
       providerStats.supportProvided.lastProvidedAt = new Date();
-      
+
       // Add to support history
       providerStats.supportHistory.push({
         type: 'provided',
-        tier,
+        tier: tier, // Use the tier parameter that's passed in ('buddy', 'community', or 'global')
         timestamp: new Date(),
         userId: new Types.ObjectId(recipientId),
         assessmentId
       });
-      
+
       await providerStats.save();
     } catch (error) {
       console.error('[PeerSupport] Error updating provider statistics:', error);
@@ -567,10 +610,10 @@ class PeerSupportService {
     try {
       // Import SupportStatistics to avoid circular dependencies
       const { SupportStatistics } = require('../Database/SupportStatisticsSchema');
-      
+
       // Get or create recipient stats document
       let recipientStats = await SupportStatistics.findOne({ userId: new Types.ObjectId(recipientId) });
-      
+
       if (!recipientStats) {
         recipientStats = new SupportStatistics({
           userId: new Types.ObjectId(recipientId),
@@ -591,12 +634,12 @@ class PeerSupportService {
           supportHistory: []
         });
       }
-      
+
       // Update received support counters
       recipientStats.supportReceived.total += 1;
       recipientStats.supportReceived[`${tier}Tier`] += 1;
       recipientStats.supportReceived.lastReceivedAt = new Date();
-      
+
       // Add to support history
       recipientStats.supportHistory.push({
         type: 'received',
@@ -605,7 +648,7 @@ class PeerSupportService {
         userId: new Types.ObjectId(providerId),
         assessmentId
       });
-      
+
       await recipientStats.save();
     } catch (error) {
       console.error('[PeerSupport] Error updating recipient statistics:', error);
@@ -625,7 +668,7 @@ class PeerSupportService {
         };
       }>();
       const supporterName = supporter?.profile?.name || supporter?.username || 'Someone';
-      
+
       // Create a notification
       const notification = new Notification({
         userId,
@@ -639,7 +682,7 @@ class PeerSupportService {
         actionParams: { id: supportProviderId }
       });
       await notification.save();
-      
+
       // Send push notification
       await pushNotificationService.sendToUser(
         userId,
@@ -667,58 +710,58 @@ class PeerSupportService {
       // Determine which status to look for based on tier
       let supportRequestStatus: string;
       let additionalQuery: any = {};
-      
+
       switch (tier) {
         case 'buddy':
           supportRequestStatus = 'buddyRequested';
           // For buddy tier, only get requests from direct buddies
           const user = await User.findById(userId).select('buddyPeers').lean<{
-            buddyPeers: Array<{userId: Types.ObjectId}>;
+            buddyPeers: Array<{ userId: Types.ObjectId }>;
           }>();
           const buddyIds = user?.buddyPeers?.map(buddy => buddy.userId.toString()) || [];
-          
+
           if (buddyIds.length === 0) {
             return [];
           }
-          
+
           additionalQuery = {
             userId: { $in: buddyIds.map(id => new Types.ObjectId(id)) }
           };
           break;
-          
+
         case 'community':
           supportRequestStatus = 'communityRequested';
           // For community tier, get requests from users in same communities
           const userComm = await User.findById(userId).select('communities').lean<{
-            communities: Array<{communityId: Types.ObjectId}>;
+            communities: Array<{ communityId: Types.ObjectId }>;
           }>();
           const communityIds = userComm?.communities?.map(comm => comm.communityId.toString()) || [];
-          
+
           if (communityIds.length === 0) {
             return [];
           }
-          
+
           // Find all users in the same communities
           const communityMembers = await User.find({
             'communities.communityId': { $in: communityIds.map(id => new Types.ObjectId(id)) }
           }).select('_id').lean<CommunityMember[]>();
-          
+
           const memberIds = communityMembers.map(member => member._id.toString());
-          
+
           additionalQuery = {
             userId: { $in: memberIds.map(id => new Types.ObjectId(id)) }
           };
           break;
-          
+
         case 'global':
           supportRequestStatus = 'globalRequested';
           // For global tier, no additional filtering needed
           break;
-          
+
         default:
           throw new Error(`Invalid tier: ${tier}`);
       }
-      
+
       // Find active support requests
       const requests = await MentalHealthState.find({
         supportRequestStatus,
@@ -731,9 +774,9 @@ class PeerSupportService {
         })
         .sort({ supportRequestTime: 1 })
         .lean();
-      
+
       console.log(`[PeerSupport] Found ${requests.length} ${tier} support requests for user ${userId}`);
-      
+
       return requests;
     } catch (error) {
       console.error(`[PeerSupport] Error getting ${tier} support requests:`, error);

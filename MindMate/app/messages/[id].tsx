@@ -51,6 +51,8 @@ interface StyleTypes {
   messageStatus: ViewStyle;
   statusIcon: TextStyle;
   readStatusText: TextStyle;
+  systemMessageContainer: ViewStyle;
+  systemMessageText: TextStyle;
 }
 
 export default function ChatScreen() {
@@ -100,7 +102,7 @@ export default function ChatScreen() {
             return newMessages;
           });
 
-          if (message.senderId._id !== user?.id) {
+          if (message.senderId._id.toString() !== user?.id) {
             websocketService.markMessagesAsRead(id as string, [message._id]);
           }
         });
@@ -128,12 +130,12 @@ export default function ChatScreen() {
           setMessages(prev => prev.map(msg =>
             data.messageIds.includes(msg._id)
               ? {
-                  ...msg,
-                  readBy: [...(msg.readBy || []), {
-                    userId: data.readBy,
-                    readAt: data.readAt ? new Date(data.readAt) : new Date()
-                  }]
-                }
+                ...msg,
+                readBy: [...(msg.readBy || []), {
+                  userId: data.readBy,
+                  readAt: data.readAt ? new Date(data.readAt) : new Date()
+                }]
+              }
               : msg
           ));
         });
@@ -325,8 +327,17 @@ export default function ChatScreen() {
             const showDateSeparator = isFirstMessage ||
               (prevMessage && new Date(prevMessage.createdAt).toDateString() !== new Date(message.createdAt).toDateString());
 
-            const isOwnMessage = message.senderId._id === user?.id;
-            const isRead = message.readBy?.some(read => read.userId === participant?.id); // Updated to use ID
+            // Check for system message first
+            if (message.contentType === 'system') {
+              return (
+                <View key={message._id} style={styles.systemMessageContainer}>
+                  <Text style={styles.systemMessageText}>{message.content}</Text>
+                </View>
+              );
+            }
+
+            const isOwnMessage = message.senderId._id.toString() === user?.id;
+            const isRead = message.readBy?.some(read => read.userId.toString() === participant?.id);
             const isLastMessage = index === messages.length - 1;
 
             return (
@@ -658,5 +669,21 @@ const styles = StyleSheet.create<StyleTypes>({
     marginTop: 2,
     marginRight: 4,
     fontStyle: 'italic',
+  },
+  systemMessageContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+    backgroundColor: 'transparent',
+  },
+  systemMessageText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    backgroundColor: 'rgba(142,142,147,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    overflow: 'hidden',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });
