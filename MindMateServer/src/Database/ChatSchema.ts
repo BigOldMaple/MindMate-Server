@@ -18,7 +18,7 @@ interface IMessage extends Document {
   conversationId: Types.ObjectId;
   senderId: Types.ObjectId;
   content: string;
-  contentType: 'text' | 'image' | 'file';
+  contentType: 'text' | 'image' | 'file' | 'system'; 
   metadata?: {
     fileName?: string;
     fileSize?: number;
@@ -75,7 +75,7 @@ const messageSchema = new Schema<IMessage>({
   },
   contentType: {
     type: String,
-    enum: ['text', 'image', 'file'],
+    enum: ['text', 'image', 'file', 'system'],
     default: 'text'
   },
   metadata: {

@@ -59,8 +59,8 @@ export default function CommunitySupportScreen() {
 
                 // 3. Send a system message about the peer support context
                 await chatApi.sendMessage(conversationId, {
-                  content: `You responded to ${username}'s peer support request`,
-                  contentType: 'system' // New message type for system messages
+                  content: `Peer support initiated`,
+                  contentType: 'system' 
                 });
 
                 // 4. Navigate to the conversation

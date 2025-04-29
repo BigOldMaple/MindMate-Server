@@ -463,23 +463,31 @@ class PeerSupportService {
     supportProviderId: string
   ): Promise<boolean> {
     try {
-      // Update the assessment
-      const result = await MentalHealthState.findByIdAndUpdate(
-        assessmentId,
-        {
-          $set: {
-            supportRequestStatus: 'supportProvided',
-            supportProvidedBy: new Types.ObjectId(supportProviderId),
-            supportProvidedTime: new Date()
-          }
-        },
-        { new: true }
-      );
+      // First, get the current assessment to determine the tier
+      const assessment = await MentalHealthState.findById(assessmentId);
 
-      if (!result) {
+      if (!assessment) {
         console.error(`[PeerSupport] Assessment ${assessmentId} not found when recording support`);
         return false;
       }
+
+      // Extract the tier from the current status before changing it
+      let supportTier: 'buddy' | 'community' | 'global' = 'buddy'; // Default to buddy
+
+      // Parse tier from status (buddyRequested → buddy, communityRequested → community, etc.)
+      if (assessment.supportRequestStatus === 'buddyRequested') {
+        supportTier = 'buddy';
+      } else if (assessment.supportRequestStatus === 'communityRequested') {
+        supportTier = 'community';
+      } else if (assessment.supportRequestStatus === 'globalRequested') {
+        supportTier = 'global';
+      }
+
+      // Now update the assessment
+      assessment.supportRequestStatus = 'supportProvided';
+      assessment.supportProvidedBy = new Types.ObjectId(supportProviderId);
+      assessment.supportProvidedTime = new Date();
+      await assessment.save();
 
       // Cancel any pending escalations
       const buddyTimeoutKey = `${assessmentId.toString()}-buddy`;
@@ -497,17 +505,45 @@ class PeerSupportService {
 
       console.log(`[PeerSupport] Support provided by user ${supportProviderId} for assessment ${assessmentId}`);
 
-      // Update support statistics
-      await this.updateSupportStatistics(assessmentId, supportProviderId);
+      // Pass the correctly extracted tier to updateSupportStatistics
+      await this.updateSupportStatisticsWithTier(assessmentId, supportProviderId, supportTier);
 
       // Notify the user in need that someone has offered support
-      const userId = result.userId.toString();
+      const userId = assessment.userId.toString();
       await this.notifySupportProvided(userId, supportProviderId);
 
       return true;
     } catch (error) {
       console.error('[PeerSupport] Error recording support provided:', error);
       return false;
+    }
+  }
+
+  // New method to update statistics with a known tier
+  private async updateSupportStatisticsWithTier(
+    assessmentId: Types.ObjectId,
+    supportProviderId: string,
+    tier: 'buddy' | 'community' | 'global'
+  ): Promise<void> {
+    try {
+      // Get the mental health assessment to determine the recipient
+      const assessment = await MentalHealthState.findById(assessmentId).lean<MentalHealthStateLean>();
+      if (!assessment) {
+        console.error(`[PeerSupport] Assessment ${assessmentId} not found when updating statistics`);
+        return;
+      }
+
+      const recipientId = assessment.userId.toString();
+
+      // Update provider statistics
+      await this.updateProviderStats(supportProviderId, tier, recipientId, assessmentId);
+
+      // Update recipient statistics
+      await this.updateRecipientStats(recipientId, tier, supportProviderId, assessmentId);
+
+      console.log(`[PeerSupport] Updated support statistics for provider ${supportProviderId} and recipient ${recipientId}`);
+    } catch (error) {
+      console.error('[PeerSupport] Error updating support statistics:', error);
     }
   }
 
