@@ -2,9 +2,10 @@
 import { StyleSheet, ScrollView, TextInput, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import { useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { communityApi } from '@/services/communityApi';
 import type { CreateCommunityData } from '../../../types/community';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function CreateCommunityScreen() {
   const router = useRouter();
@@ -54,69 +55,83 @@ export default function CreateCommunityScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.content}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Community Name</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.name}
-            onChangeText={(text) => setFormData({...formData, name: text})}
-            placeholder="Enter community name"
-            editable={!isLoading}
-          />
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.container}>
+        {/* Custom Header */}
+        <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Create Community</Text>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={formData.description}
-            onChangeText={(text) => setFormData({...formData, description: text})}
-            placeholder="Describe your community"
-            multiline
-            numberOfLines={4}
-            editable={!isLoading}
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Community Type</Text>
-          <View style={styles.typeButtons}>
-            <Pressable 
-              style={[styles.typeButton, formData.type === 'support' && styles.selectedType]}
-              onPress={() => setFormData({...formData, type: 'support'})}
-              disabled={isLoading}
-            >
-              <Text style={[styles.typeText, formData.type === 'support' && styles.selectedTypeText]}>
-                Support Group
-              </Text>
-            </Pressable>
-            <Pressable 
-              style={[styles.typeButton, formData.type === 'professional' && styles.selectedType]}
-              onPress={() => setFormData({...formData, type: 'professional'})}
-              disabled={isLoading}
-            >
-              <Text style={[styles.typeText, formData.type === 'professional' && styles.selectedTypeText]}>
-                Professional
-              </Text>
-            </Pressable>
+        <ScrollView style={styles.content}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Community Name</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.name}
+              onChangeText={(text) => setFormData({...formData, name: text})}
+              placeholder="Enter community name"
+              editable={!isLoading}
+            />
           </View>
-        </View>
 
-        <Pressable 
-          style={[styles.createButton, isLoading && styles.createButtonDisabled]}
-          onPress={handleCreateCommunity}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.createButtonText}>Create Community</Text>
-          )}
-        </Pressable>
-      </ScrollView>
-    </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={formData.description}
+              onChangeText={(text) => setFormData({...formData, description: text})}
+              placeholder="Describe your community"
+              multiline
+              numberOfLines={4}
+              editable={!isLoading}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Community Type</Text>
+            <View style={styles.typeButtons}>
+              <Pressable 
+                style={[styles.typeButton, formData.type === 'support' && styles.selectedType]}
+                onPress={() => setFormData({...formData, type: 'support'})}
+                disabled={isLoading}
+              >
+                <Text style={[styles.typeText, formData.type === 'support' && styles.selectedTypeText]}>
+                  Support Group
+                </Text>
+              </Pressable>
+              <Pressable 
+                style={[styles.typeButton, formData.type === 'professional' && styles.selectedType]}
+                onPress={() => setFormData({...formData, type: 'professional'})}
+                disabled={isLoading}
+              >
+                <Text style={[styles.typeText, formData.type === 'professional' && styles.selectedTypeText]}>
+                  Professional
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <Pressable 
+            style={[styles.createButton, isLoading && styles.createButtonDisabled]}
+            onPress={handleCreateCommunity}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.createButtonText}>Create Community</Text>
+            )}
+          </Pressable>
+        </ScrollView>
+      </View>
+    </>
   );
 }
 
@@ -124,6 +139,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F6FA',
+  },
+  // Custom header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  backButton: {
+    padding: 10,
+    marginRight: 10,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
   },
   content: {
     padding: 16,

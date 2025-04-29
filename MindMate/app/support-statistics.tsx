@@ -1,10 +1,18 @@
 // MindMate/app/support-statistics.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, ActivityIndicator, Alert, RefreshControl, Pressable } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Stack } from 'expo-router';
-import { mentalHealthApi } from '@/services/mentalHealthApi'; //declared but never used
+import { Stack, useRouter } from 'expo-router';
+import { mentalHealthApi } from '@/services/mentalHealthApi';
+
+interface SupportHistoryEntry {
+  type: 'provided' | 'received';
+  tier: 'buddy' | 'community' | 'global';
+  timestamp: string;
+  userId: string;
+  assessmentId: string;
+}
 
 interface SupportStats {
   providedSupport: {
@@ -22,10 +30,15 @@ interface SupportStats {
     lastReceivedAt: string | null;
   };
   supportImpact: number; // 0-100 score
+  recentHistory?: SupportHistoryEntry[];
 }
 
 export default function SupportStatisticsScreen() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
   const [stats, setStats] = useState<SupportStats>({
     providedSupport: {
       total: 0,
@@ -51,40 +64,27 @@ export default function SupportStatisticsScreen() {
   const fetchSupportStats = async () => {
     try {
       setIsLoading(true);
+      setHasError(false);
       
-      // This would be an actual API call in a real implementation
-      // For now, we'll use mock data
-      // const data = await mentalHealthApi.getSupportStats();
+      // Call the real API instead of using mock data
+      const data = await mentalHealthApi.getSupportStatistics();
       
-      // Mock data for demonstration
-      const mockData: SupportStats = {
-        providedSupport: {
-          total: 12,
-          buddyTier: 8,
-          communityTier: 3,
-          globalTier: 1,
-          lastProvidedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        receivedSupport: {
-          total: 5,
-          buddyTier: 4,
-          communityTier: 1,
-          globalTier: 0,
-          lastReceivedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        supportImpact: 78
-      };
-      
-      // Simulate loading delay
-      setTimeout(() => {
-        setStats(mockData);
-        setIsLoading(false);
-      }, 1000);
-      
+      setStats(data);
     } catch (error) {
       console.error('Failed to fetch support statistics:', error);
+      setHasError(true);
+      if (!refreshing) {
+        Alert.alert('Error', 'Failed to load support statistics. Please try again later.');
+      }
+    } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchSupportStats();
   };
 
   // Format date to "X days ago" or date string
@@ -103,20 +103,59 @@ export default function SupportStatisticsScreen() {
     return date.toLocaleDateString();
   };
 
+  // Get appropriate tier name display text
+  const getTierDisplayName = (tier: string): string => {
+    switch (tier) {
+      case 'buddy':
+        return 'Buddy';
+      case 'community':
+        return 'Community';
+      case 'global':
+        return 'Global';
+      default:
+        return tier;
+    }
+  };
+
   return (
     <>
-      <Stack.Screen options={{ 
-        title: 'Support Statistics',
-        headerShown: true
-      }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        {isLoading ? (
+        {/* Custom Header */}
+        <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Support Statistics</Text>
+        </View>
+        
+        {isLoading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#2196F3" />
             <Text style={styles.loadingText}>Loading support statistics...</Text>
           </View>
+        ) : hasError && !stats.providedSupport.total && !stats.receivedSupport.total ? (
+          <View style={styles.errorContainer}>
+            <FontAwesome name="exclamation-circle" size={64} color="#F44336" />
+            <Text style={styles.errorText}>Failed to load statistics</Text>
+            <Pressable style={styles.refreshButton} onPress={fetchSupportStats}>
+              <Text style={styles.refreshButtonText}>Retry</Text>
+            </Pressable>
+          </View>
         ) : (
-          <ScrollView style={styles.scrollView}>
+          <ScrollView 
+            style={styles.scrollView}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#2196F3']}
+              />
+            }
+          >
             {/* Impact Score Card */}
             <View style={styles.impactCard}>
               <Text style={styles.impactTitle}>Your Support Impact</Text>
@@ -124,10 +163,51 @@ export default function SupportStatisticsScreen() {
                 <View style={styles.impactScore}>
                   <Text style={styles.impactScoreText}>{stats.supportImpact}</Text>
                 </View>
+                <View style={styles.ratingContainer}>
+                  <Text style={styles.ratingLabel}>
+                    {stats.supportImpact < 30 ? 'Developing' : 
+                     stats.supportImpact < 60 ? 'Established' : 'Outstanding'}
+                  </Text>
+                </View>
               </View>
+              
               <Text style={styles.impactDescription}>
-                Your support helps build a stronger mental health community
+                This score measures your overall contribution to the MindMate community, combining support given ({stats.providedSupport.total}) and received ({stats.receivedSupport.total}).
               </Text>
+              
+              {/* Expandable explanation panel */}
+              <Pressable 
+                style={styles.explanationButton} 
+                onPress={() => setShowExplanation(!showExplanation)}
+              >
+                <Text style={styles.explanationButtonText}>
+                  {showExplanation ? "Hide details" : "What does this mean?"}
+                </Text>
+                <FontAwesome 
+                  name={showExplanation ? "chevron-up" : "chevron-down"} 
+                  size={12} 
+                  color="white" 
+                />
+              </Pressable>
+              
+              {showExplanation && (
+                <View style={styles.explanationPanel}>
+                  <Text style={styles.explanationText}>
+                    <Text style={{fontWeight: 'bold'}}>How it's calculated:</Text>{'\n'}
+                    • 60% based on support you've provided{'\n'}
+                    • 40% based on support you've received{'\n'}
+                    • Higher scores reflect more community engagement{'\n\n'}
+                    <Text style={{fontWeight: 'bold'}}>Score ranges:</Text>{'\n'}
+                    • 0-30: Developing - Just getting started{'\n'}
+                    • 31-60: Established - Regular community member{'\n'}
+                    • 61-100: Outstanding - Community pillar{'\n\n'}
+                    <Text style={{fontWeight: 'bold'}}>How to improve:</Text>{'\n'}
+                    • Provide support to your buddy peers when requested{'\n'}
+                    • Respond to community and global support requests{'\n'}
+                    • Reach out for support when you need it
+                  </Text>
+                </View>
+              )}
             </View>
             
             {/* Support Provided Card */}
@@ -182,6 +262,30 @@ export default function SupportStatisticsScreen() {
               </View>
             </View>
             
+            {/* Recent Support History */}
+            {stats.recentHistory && stats.recentHistory.length > 0 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Recent Support Activity</Text>
+                {stats.recentHistory.map((entry, index) => (
+                  <View key={index} style={styles.historyItem}>
+                    <View style={styles.historyIconContainer}>
+                      <FontAwesome 
+                        name={entry.type === 'provided' ? 'hand-o-right' : 'hand-o-left'} 
+                        size={20} 
+                        color={entry.type === 'provided' ? '#2196F3' : '#4CAF50'} 
+                      />
+                    </View>
+                    <View style={styles.historyContent}>
+                      <Text style={styles.historyTitle}>
+                        {entry.type === 'provided' ? 'Provided' : 'Received'} {getTierDisplayName(entry.tier)} support
+                      </Text>
+                      <Text style={styles.historyTime}>{formatTimeAgo(entry.timestamp)}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+            
             {/* Support Benefits Info */}
             <View style={styles.infoCard}>
               <View style={styles.infoHeader}>
@@ -210,6 +314,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F6FA',
   },
+  // Custom header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  backButton: {
+    padding: 10,
+    marginRight: 10,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  // Rest of the styles
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -220,6 +343,28 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#666',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    marginTop: 16,
+    marginBottom: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  refreshButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -265,10 +410,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2196F3',
   },
+  ratingContainer: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 16,
+  },
+  ratingLabel: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
   impactDescription: {
     fontSize: 14,
     color: 'white',
     textAlign: 'center',
+  },
+  explanationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 16,
+  },
+  explanationButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '500',
+    marginRight: 6,
+  },
+  explanationPanel: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+  },
+  explanationText: {
+    color: '#333',
+    fontSize: 13,
+    lineHeight: 20,
   },
   card: {
     backgroundColor: 'white',
@@ -323,6 +507,29 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  historyItem: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  historyIconContainer: {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyContent: {
+    flex: 1,
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  historyTime: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
   infoCard: {
     backgroundColor: 'white',

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, ScrollView, Platform, AppState, AppStateStatus } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Platform, AppState, AppStateStatus, Pressable } from 'react-native';
 import { stepService } from '@/services/simplifiedStepService';
-import * as SecureStore from 'expo-secure-store';
+import { Stack, useRouter } from 'expo-router';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function SensorsScreen() {
+  const router = useRouter();
   const [steps, setSteps] = useState(0);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('Never');
@@ -93,36 +95,66 @@ export default function SensorsScreen() {
     };
   }, []);
       
-      // CRITICAL: DON'T remove the subscription or call cleanup
-      // This is what was causing the reset
-      // if (subscriptionRef.current) {
-      //   subscriptionRef.current.remove();
-      //   subscriptionRef.current = null;
-      // }
-      
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Pedometer Sensor</Text>
-        <Text style={styles.statusText}>
-          Status: {isAvailable === null ? 'Checking...' : isAvailable ? 'Available' : 'Not Available'}
-        </Text>
-        <Text style={styles.platformText}>Platform: {Platform.OS}</Text>
-        <Text style={styles.stepsText}>Today's Steps: {steps}</Text>
-        <Text style={styles.updateText}>Last Updated: {lastUpdate}</Text>
-        <Text style={styles.noteText}>
-          Step count persists across app restarts and only resets at midnight.
-        </Text>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.container}>
+        {/* Custom Header */}
+        <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Sensors</Text>
+        </View>
+        
+        <ScrollView style={styles.scrollContainer}>
+          <View style={styles.card}>
+            <Text style={styles.title}>Pedometer Sensor</Text>
+            <Text style={styles.statusText}>
+              Status: {isAvailable === null ? 'Checking...' : isAvailable ? 'Available' : 'Not Available'}
+            </Text>
+            <Text style={styles.platformText}>Platform: {Platform.OS}</Text>
+            <Text style={styles.stepsText}>Today's Steps: {steps}</Text>
+            <Text style={styles.updateText}>Last Updated: {lastUpdate}</Text>
+            <Text style={styles.noteText}>
+              Step count persists across app restarts and only resets at midnight.
+            </Text>
+          </View>
+        </ScrollView>
       </View>
-    </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#f5f5f5',
+  },
+  // Custom header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  backButton: {
+    padding: 10,
+    marginRight: 10,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  scrollContainer: {
+    flex: 1,
+    padding: 16,
   },
   card: {
     backgroundColor: 'white',

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router'; // Add Stack import
 import { buddyPeerApi } from '@/services/buddyPeerApi';
 import { chatApi } from '@/services/chatApi';
 import { debounce } from 'lodash';
@@ -64,75 +64,80 @@ export default function NewMessageScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.5 : 1,
-            padding: 8,
-          })}
-        >
-          <FontAwesome name="arrow-left" size={20} color="#666" />
-        </Pressable>
-        <Text style={styles.headerTitle}>New Message</Text>
-      </View>
-
-      {/* Search Input */}
-      <View style={styles.searchContainer}>
-        <FontAwesome name="search" size={20} color="#666" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search users..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoFocus
-          autoCapitalize="none"
-        />
-        {isSearching && (
-          <ActivityIndicator size="small" color="#2196F3" style={styles.loader} />
-        )}
-      </View>
-
-      {/* Error Message */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+    <>
+      {/* Hide default header */}
+      <Stack.Screen options={{ headerShown: false }} />
+      
+      <View style={styles.container}>
+        {/* Custom Header */}
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.5 : 1,
+              padding: 8,
+            })}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <Text style={styles.headerTitle}>New Message</Text>
         </View>
-      )}
 
-      {/* Search Results */}
-      <View style={styles.resultsContainer}>
-        {searchResults.length === 0 && searchQuery && !isSearching ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No users found</Text>
+        {/* Search Input */}
+        <View style={styles.searchContainer}>
+          <FontAwesome name="search" size={20} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search users..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+            autoCapitalize="none"
+          />
+          {isSearching && (
+            <ActivityIndicator size="small" color="#2196F3" style={styles.loader} />
+          )}
+        </View>
+
+        {/* Error Message */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-        ) : (
-          searchResults.map((user) => (
-            <Pressable
-              key={user.id}
-              style={styles.userCard}
-              onPress={() => handleUserSelect(user.id)}
-            >
-              <View style={styles.avatar}>
-                <FontAwesome name="user" size={24} color="#666" />
-              </View>
-              <View style={styles.userInfo}>
-                <Text style={styles.userName}>{user.name}</Text>
-                <Text style={styles.userUsername}>@{user.username}</Text>
-              </View>
-              <FontAwesome 
-                name="chevron-right" 
-                size={16} 
-                color="#666"
-                style={styles.chevron}
-              />
-            </Pressable>
-          ))
         )}
+
+        {/* Search Results */}
+        <View style={styles.resultsContainer}>
+          {searchResults.length === 0 && searchQuery && !isSearching ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No users found</Text>
+            </View>
+          ) : (
+            searchResults.map((user) => (
+              <Pressable
+                key={user.id}
+                style={styles.userCard}
+                onPress={() => handleUserSelect(user.id)}
+              >
+                <View style={styles.avatar}>
+                  <FontAwesome name="user" size={24} color="#666" />
+                </View>
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName}>{user.name}</Text>
+                  <Text style={styles.userUsername}>@{user.username}</Text>
+                </View>
+                <FontAwesome 
+                  name="chevron-right" 
+                  size={16} 
+                  color="#666"
+                  style={styles.chevron}
+                />
+              </Pressable>
+            ))
+          )}
+        </View>
       </View>
-    </View>
+    </>
   );
 }
 
