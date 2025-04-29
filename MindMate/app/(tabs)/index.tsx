@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Pressable, ActivityIndicator, Alert, Platform, ScrollView } from 'react-native';
+import { StyleSheet, Pressable, ActivityIndicator, Alert, Platform, ScrollView, RefreshControl } from 'react-native';
 import { View, Text } from '@/components/Themed';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, router } from 'expo-router';
@@ -21,12 +21,14 @@ export default function HomeScreen() {
   const [activeCount, setActiveCount] = useState(0);
   const [pendingRequests, setPendingRequests] = useState<BuddyPeerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showDevOptions, setShowDevOptions] = useState(false);
   const [checkInStatus, setCheckInStatus] = useState<{
     canCheckIn: boolean;
     nextCheckInTime?: Date;
   }>({ canCheckIn: true });
 
-  // Use refs to track previous check-in status reliably across renders
+  // Reference to track previous check-in status
   const prevCheckInStatusRef = useRef<boolean>(true);
 
   const loadBuddyData = useCallback(async () => {
@@ -46,7 +48,7 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Load initial data
+  // Initial data load
   useEffect(() => {
     loadBuddyData();
   }, []);
@@ -59,7 +61,6 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    // Define the proper interface for the check-in status
     interface CheckInStatusType {
       canCheckIn: boolean;
       nextCheckInTime?: Date;
@@ -130,8 +131,7 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Add this additional effect to check notifications on app focus
-  // But now with a cooldown to prevent duplicate notifications
+  // Additional effect for check-in notification
   useEffect(() => {
     const checkNotifications = async () => {
       try {
@@ -161,29 +161,7 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Add this additional effect to check notifications on app focus
-  useEffect(() => {
-    const checkNotifications = async () => {
-      try {
-        // Explicitly check if check-in is available
-        const result = await notificationsApi.checkForCheckInStatus();
-        if (result) {
-          console.log('Check-in is available, created local notification');
-        }
-      } catch (error) {
-        console.error('Error checking notifications on focus:', error);
-      }
-    };
-
-    // Initial check
-    checkNotifications();
-
-    // Set up an interval to check every 5 minutes
-    const interval = setInterval(checkNotifications, 5 * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
+  // Format time remaining for check-in cooldown
   const formatTimeRemaining = (nextTime: Date) => {
     const now = new Date();
     const diff = nextTime.getTime() - now.getTime();
@@ -192,137 +170,189 @@ export default function HomeScreen() {
     return `${hours}h ${minutes}m`;
   };
 
+  // Refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadBuddyData();
+    setRefreshing(false);
+  }, [loadBuddyData]);
+
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={true}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
     >
-      {/* Current Wellness Card */}
-      <View style={styles.wellnessCard}>
-        <View style={styles.wellnessHeader}>
-          <Text style={styles.cardTitle}>Current Wellness</Text>
-        </View>
-        <View style={styles.wellnessContent}>
-          <View style={styles.scoreCircle}>
-            <Text style={styles.scoreText}>85%</Text>
+      {/* Wellness Overview Section */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.wellnessCard}>
+          <View style={styles.wellnessHeader}>
+            <Text style={styles.cardTitle}>Current Wellness</Text>
+            <Pressable
+              style={styles.moreButton}
+              // Remove invalid route and replace with a placeholder alert for now
+              onPress={() => Alert.alert("Wellness Insights", "This feature is coming soon!")}
+            >
+              <Text style={styles.moreButtonText}>Details</Text>
+            </Pressable>
           </View>
-          <View style={styles.metricsContainer}>
-            <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Sleep:</Text>
-              <Text style={styles.metricValue}>7.5hrs</Text>
-              <View style={[styles.statusPill, { backgroundColor: '#E8F5E9' }]}>
-                <Text style={[styles.statusText, { color: '#2E7D32' }]}>Stable</Text>
-              </View>
+          <View style={styles.wellnessContent}>
+            <View style={styles.scoreCircle}>
+              <Text style={styles.scoreText}>85%</Text>
             </View>
-            <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Activity:</Text>
-              <Text style={styles.metricValue}>Low</Text>
-              <View style={[styles.statusPill, { backgroundColor: '#FFE0B2' }]}>
-                <Text style={[styles.statusText, { color: '#E65100' }]}>Decreasing</Text>
+            <View style={styles.metricsContainer}>
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Sleep:</Text>
+                <Text style={styles.metricValue}>7.5hrs</Text>
+                <View style={[styles.statusPill, { backgroundColor: '#E8F5E9' }]}>
+                  <Text style={[styles.statusText, { color: '#2E7D32' }]}>Stable</Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Social:</Text>
-              <Text style={styles.metricValue}>Moderate</Text>
-              <View style={[styles.statusPill, { backgroundColor: '#E3F2FD' }]}>
-                <Text style={[styles.statusText, { color: '#1565C0' }]}>Increasing</Text>
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Activity:</Text>
+                <Text style={styles.metricValue}>Low</Text>
+                <View style={[styles.statusPill, { backgroundColor: '#FFE0B2' }]}>
+                  <Text style={[styles.statusText, { color: '#E65100' }]}>Decreasing</Text>
+                </View>
+              </View>
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Social:</Text>
+                <Text style={styles.metricValue}>Moderate</Text>
+                <View style={[styles.statusPill, { backgroundColor: '#E3F2FD' }]}>
+                  <Text style={[styles.statusText, { color: '#1565C0' }]}>Increasing</Text>
+                </View>
               </View>
             </View>
           </View>
         </View>
       </View>
 
-      {/* Check In Button */}
-      <Pressable
-        style={[
-          styles.checkInButton,
-          !checkInStatus.canCheckIn && styles.checkInButtonDisabled
-        ]}
-        onPress={() => {
-          if (checkInStatus.canCheckIn) {
-            router.push('./home/check_in');
-          } else {
-            // Show a message about when the next check-in will be available
-            Alert.alert(
-              'Check-In Not Available',
-              `You have already completed your check-in for today. Next check-in will be available ${checkInStatus.nextCheckInTime
-                ? `at ${new Date(checkInStatus.nextCheckInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${new Date(checkInStatus.nextCheckInTime).toLocaleDateString()
-                }`
-                : 'later'
-              }.`
-            );
-          }
-        }}
-        disabled={!checkInStatus.canCheckIn}
-      >
-        <FontAwesome
-          name="heart"
-          size={20}
-          color={checkInStatus.canCheckIn ? "#FF4081" : "#999"}
-        />
-        <Text style={[
-          styles.checkInText,
-          !checkInStatus.canCheckIn && styles.checkInTextDisabled
-        ]}>
-          {checkInStatus.canCheckIn
-            ? 'Check In'
-            : `Next Check-in in ${formatTimeRemaining(new Date(checkInStatus.nextCheckInTime!))}`
-          }
-        </Text>
-      </Pressable>
+      {/* Check-in Action Button */}
+      <View style={styles.actionContainer}>
+        <Pressable
+          style={[
+            styles.checkInButton,
+            !checkInStatus.canCheckIn && styles.checkInButtonDisabled
+          ]}
+          onPress={() => {
+            if (checkInStatus.canCheckIn) {
+              router.push('./home/check_in');
+            } else {
+              // Show a message about when the next check-in will be available
+              Alert.alert(
+                'Check-In Not Available',
+                `You have already completed your check-in for today. Next check-in will be available ${checkInStatus.nextCheckInTime
+                  ? `at ${new Date(checkInStatus.nextCheckInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${new Date(checkInStatus.nextCheckInTime).toLocaleDateString()
+                  }`
+                  : 'later'
+                }.`
+              );
+            }
+          }}
+          disabled={!checkInStatus.canCheckIn}
+        >
+          {checkInStatus.canCheckIn ? (
+            <>
+              <FontAwesome name="heart" size={20} color="#FFFFFF" />
+              <Text style={styles.checkInText}>Check In Now</Text>
+            </>
+          ) : (
+            <>
+              <FontAwesome name="clock-o" size={20} color="#999" />
+              <Text style={styles.checkInTextDisabled}>
+                Next Check-in in {formatTimeRemaining(new Date(checkInStatus.nextCheckInTime!))}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
 
       {/* Support Requests Section */}
-      <SupportRequestsSection />
-
-      {/* Health Data Sync Button */}
-      <SyncHealthDataButton />
-
-      {/* Mental Health Analysis Buttons (Dev Only) */}
-      <View style={styles.buttonHeaderContainer}>
-        <Text style={styles.buttonHeader}>Mental Health Analysis Options</Text>
+      <View style={styles.sectionContainer}>
+        <SupportRequestsSection />
       </View>
 
-      {/* Establish Baseline Button */}
-      <EstablishBaselineButton />
-
-      {/* Analyze Recent Health Button */}
-      <AnalyzeRecentButton />
-
-      {/* Clear Mental Health Data Button (Dev Only) */}
-      <ClearAnalysisButton />
-
       {/* Support Network Card */}
-      <View style={styles.networkCard}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Support Network</Text>
-          <View style={styles.headerActions}>
-            <Pressable onPress={() => router.push('/support-statistics')} style={styles.statsLink}>
-              <FontAwesome name="bar-chart" size={16} color="#2196F3" />
+      <View style={styles.sectionContainer}>
+        <View style={styles.networkCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Support Network</Text>
+            <View style={styles.headerActions}>
+              <Pressable onPress={() => router.push('/support-statistics')} style={styles.statsLink}>
+                <FontAwesome name="bar-chart" size={16} color="#2196F3" />
+              </Pressable>
+              <Link href="./home/support_network" style={styles.manageLink}>
+                <Text style={styles.manageLinkText}>Manage</Text>
+              </Link>
+            </View>
+          </View>
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#2196F3" />
+            </View>
+          ) : (
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{buddyPeers.length}</Text>
+                <Text style={styles.statLabel}>Buddy Peers</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{activeCount}</Text>
+                <Text style={styles.statLabel}>Active Now</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{pendingRequests.length}</Text>
+                <Text style={styles.statLabel}>Pending</Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Health Sync Card */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.syncCard}>
+          <View style={styles.syncHeader}>
+            <Text style={styles.cardTitle}>Health Data</Text>
+            <Pressable
+              onPress={() => Alert.alert("Health Data", "Detailed view coming soon!")}
+              style={styles.syncViewDetails}
+            >
+              <Text style={styles.syncViewDetailsText}>View Data</Text>
             </Pressable>
-            <Link href="./home/support_network" style={styles.manageLink}>
-              <Text style={styles.manageLinkText}>Manage</Text>
-            </Link>
+          </View>
+          <Text style={styles.syncDescription}>
+            Sync your health data to improve wellness insights and recommendations
+          </Text>
+          <View style={styles.syncButtonContainer}>
+            <SyncHealthDataButton />
           </View>
         </View>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#2196F3" />
-          </View>
-        ) : (
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{buddyPeers.length}</Text>
-              <Text style={styles.statLabel}>Buddy Peers</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{activeCount}</Text>
-              <Text style={styles.statLabel}>Active Now</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{pendingRequests.length}</Text>
-              <Text style={styles.statLabel}>Pending</Text>
-            </View>
+      </View>
+
+      {/* Developer Options Section - Collapsible */}
+      <View style={styles.sectionContainer}>
+        <Pressable
+          style={styles.devOptionsHeader}
+          onPress={() => setShowDevOptions(!showDevOptions)}
+        >
+          <Text style={styles.devOptionsTitle}>Developer Options</Text>
+          <FontAwesome
+            name={showDevOptions ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#666"
+          />
+        </Pressable>
+
+        {showDevOptions && (
+          <View style={styles.devOptionsContent}>
+            <Text style={styles.devOptionsSubtitle}>Mental Health Analysis</Text>
+            <EstablishBaselineButton />
+            <AnalyzeRecentButton />
+            <ClearAnalysisButton />
           </View>
         )}
       </View>
@@ -333,25 +363,44 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#F5F6FA',
   },
+  contentContainer: {
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
+  sectionContainer: {
+    marginBottom: 24,
+  },
+  // Wellness Card Styles
   wellnessCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   wellnessHeader: {
-    marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+  },
+  moreButton: {
+    padding: 6,
+  },
+  moreButtonText: {
+    fontSize: 14,
+    color: '#2196F3',
+    fontWeight: '600',
   },
   wellnessContent: {
     flexDirection: 'row',
@@ -364,7 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3F2FD',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 20,
   },
   scoreText: {
     fontSize: 24,
@@ -377,20 +426,22 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   metricLabel: {
     width: 60,
     fontSize: 14,
     color: '#666',
+    fontWeight: '500',
   },
   metricValue: {
     fontSize: 14,
     fontWeight: '500',
     marginRight: 8,
+    minWidth: 60,
   },
   statusPill: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
@@ -398,129 +449,57 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+
+  // Check-in Button Styles
+  actionContainer: {
+    marginBottom: 24,
+  },
   checkInButton: {
-    backgroundColor: 'white',
+    backgroundColor: '#FF4081',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+    padding: 18,
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 4,
+  },
+  checkInButtonDisabled: {
+    backgroundColor: '#F5F5F5',
+    shadowOpacity: 0.1,
   },
   checkInText: {
-    marginLeft: 8,
+    marginLeft: 10,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  checkInTextDisabled: {
+    marginLeft: 10,
     fontSize: 16,
     fontWeight: '600',
-    color: '#FF4081',
+    color: '#999',
   },
-  buttonHeaderContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  buttonHeader: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 8,
-  },
+
+  // Network Card Styles
   networkCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  manageLink: {
-    padding: 4,
-  },
-  manageLinkText: {
-    color: '#2196F3',
-    fontSize: 14,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  communitiesCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  communityItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
-  },
-  communityName: {
-    fontSize: 15,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  communityStats: {
-    fontSize: 12,
-    color: '#666',
-  },
-  joinButton: {
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  joinButtonText: {
-    color: '#2196F3',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkInButtonDisabled: {
-    opacity: 0.6,
-  },
-  checkInTextDisabled: {
-    color: '#999',
+    marginBottom: 16,
   },
   headerActions: {
     flexDirection: 'row',
@@ -528,10 +507,119 @@ const styles = StyleSheet.create({
   },
   statsLink: {
     padding: 8,
-    marginRight: 4,
+    marginRight: 8,
   },
-  contentContainer: {
+  manageLink: {
+    padding: 6,
+  },
+  manageLinkText: {
+    color: '#2196F3',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: '#666',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Health Sync Card Styles
+  syncCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  syncHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  syncDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  syncButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  syncViewDetails: {
+    padding: 6,
+  },
+  syncViewDetailsText: {
+    fontSize: 14,
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  syncButtonContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  // Developer Options Styles
+  devOptionsHeader: {
+    backgroundColor: 'white',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
-    paddingBottom: 32, 
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  devOptionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  devOptionsContent: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    marginTop: -1, // Connect with the header
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  devOptionsSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 12,
   }
 });
