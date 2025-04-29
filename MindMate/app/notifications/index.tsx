@@ -11,110 +11,7 @@ import { notificationsApi, Notification } from '@/services/notificationsApi';
 import { useMemo } from 'react';
 import { ScrollView, SectionList } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-
-// Mock data for fallback when API isn't available
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    type: 'support',
-    title: 'Support Request',
-    message: 'Sarah wants to check in with you',
-    time: '5 min ago',
-    read: false,
-    actionable: true,
-    actionRoute: '/messages/[id]',
-    actionParams: { id: 'sarah123' }
-  },
-  {
-    id: '2',
-    type: 'wellness',
-    title: 'Daily Check-in',
-    message: 'Time for your daily wellness check',
-    time: '1 hour ago',
-    read: true,
-    actionable: true,
-    actionRoute: '/home/check_in'
-  },
-  {
-    id: '3',
-    type: 'community',
-    title: 'New Community Post',
-    message: 'New activity in Mindful Mornings group',
-    time: '2 hours ago',
-    read: false,
-    actionable: true,
-    actionRoute: '/community/[id]',
-    actionParams: { id: 'mindful-mornings' }
-  },
-  {
-    id: '4',
-    type: 'alert',
-    title: 'Wellness Alert',
-    message: 'Your activity patterns have changed significantly over the past week',
-    time: '3 hours ago',
-    read: true
-  },
-  {
-    id: '5',
-    type: 'buddy',
-    title: 'New Buddy Request',
-    message: 'Michael would like to add you as a buddy peer',
-    time: '1 day ago',
-    read: false,
-    actionable: true,
-    actionRoute: '/home/support_network'
-  },
-  {
-    id: '6',
-    type: 'wellness',
-    title: 'Sleep Pattern Change',
-    message: 'Your sleep quality has improved this week',
-    time: '2 days ago',
-    read: true
-  }
-];
-
-// Group notifications by date
-const groupNotificationsByDate = (notifications: Notification[]) => {
-  const groups: Record<string, Notification[]> = {};
-
-  notifications.forEach(notification => {
-    // Convert time string to an actual date for grouping
-    let dateKey = 'Today';
-    const time = typeof notification.time === 'string' ? notification.time : notification.time;
-
-    if (typeof time === 'string') {
-      if (time.includes('day')) {
-        dateKey = time.includes('1 day') ? 'Yesterday' : 'Earlier';
-      } else if (time.includes('hour') || time.includes('min')) {
-        dateKey = 'Today';
-      }
-    } else {
-      // If it's a Date object, format it appropriately
-      const now = new Date();
-      const notifDate = new Date(time);
-      const diffTime = Math.abs(now.getTime() - notifDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 0) {
-        dateKey = 'Today';
-      } else if (diffDays === 1) {
-        dateKey = 'Yesterday';
-      } else if (diffDays <= 7) {
-        dateKey = 'This Week';
-      } else {
-        dateKey = 'Earlier';
-      }
-    }
-
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
-    }
-    groups[dateKey].push(notification);
-  });
-
-  return groups;
-};
+import SwipeableNotificationItem from '@/components/SwipeableNotificationItem';
 
 export default function NotificationsScreen() {
   const colorScheme = useColorScheme();
@@ -201,9 +98,10 @@ export default function NotificationsScreen() {
   // Delete notification
   const deleteNotification = useCallback(async (id: string) => {
     try {
+      console.log('Deleting notification:', id);
       await notificationsApi.deleteNotification(id);
 
-      // Optimistically update the UI
+      // Optimistically update the UI by removing the deleted notification
       setNotifications(prev => prev.filter(notif => 
         notif.id !== id && notif._id !== id
       ));
@@ -234,105 +132,101 @@ export default function NotificationsScreen() {
 
   // Group notifications by date
   const groupedNotifications = useMemo(() => {
-    return groupNotificationsByDate(filteredNotifications);
+    const groups: Record<string, Notification[]> = {};
+
+    filteredNotifications.forEach(notification => {
+      // Convert time string to an actual date for grouping
+      let dateKey = 'Today';
+      const time = typeof notification.time === 'string' ? notification.time : notification.time;
+
+      if (typeof time === 'string') {
+        if (time.includes('day')) {
+          dateKey = time.includes('1 day') ? 'Yesterday' : 'Earlier';
+        } else if (time.includes('hour') || time.includes('min')) {
+          dateKey = 'Today';
+        }
+      } else {
+        // If it's a Date object, format it appropriately
+        const now = new Date();
+        const notifDate = new Date(time);
+        const diffTime = Math.abs(now.getTime() - notifDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+          dateKey = 'Today';
+        } else if (diffDays === 1) {
+          dateKey = 'Yesterday';
+        } else if (diffDays <= 7) {
+          dateKey = 'This Week';
+        } else {
+          dateKey = 'Earlier';
+        }
+      }
+
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(notification);
+    });
+
+    return groups;
   }, [filteredNotifications]);
+
+  // Handle notification press
+  const handleNotificationPress = async (item: Notification) => {
+    try {
+      // First check if the notification has a valid ID
+      // MongoDB documents have _id, but we might be using id in our client code
+      const notificationId = item.id || item._id;
+
+      if (!notificationId) {
+        console.error('Notification missing ID:', item);
+        return;
+      }
+
+      console.log('Marking notification as read:', notificationId);
+
+      // Mark as read - wrap in try/catch to handle errors gracefully
+      try {
+        await markAsRead(notificationId);
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
+        // Continue with navigation even if marking as read fails
+      }
+
+      // Navigate to action route if available
+      if (item.actionable && item.actionRoute) {
+        // Convert string route to a typed route
+        if (item.actionRoute === '/messages/[id]' && item.actionParams?.id) {
+          router.push({
+            pathname: '/messages/[id]',
+            params: { id: item.actionParams.id }
+          });
+        } else if (item.actionRoute === '/home/check_in') {
+          router.push('/home/check_in');
+        } else if (item.actionRoute === '/home/support_network') {
+          router.push('/home/support_network');
+        } else if (item.actionRoute === '/community/[id]' && item.actionParams?.id) {
+          router.push({
+            pathname: '/community/[id]',
+            params: { id: item.actionParams.id }
+          });
+        } else {
+          console.log('Unknown route:', item.actionRoute);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling notification tap:', error);
+    }
+  };
 
   // Render notification item
   const renderNotificationItem = ({ item }: { item: Notification }) => (
-    <Pressable
-      style={[
-        styles.notificationItem,
-        !item.read && styles.unreadNotification
-      ]}
-      onPress={async () => {
-        try {
-          // First check if the notification has a valid ID
-          // MongoDB documents have _id, but we might be using id in our client code
-          const notificationId = item.id || item._id;
-
-          if (!notificationId) {
-            console.error('Notification missing ID:', item);
-            return;
-          }
-
-          console.log('Marking notification as read:', notificationId);
-
-          // Mark as read - wrap in try/catch to handle errors gracefully
-          try {
-            await markAsRead(notificationId);
-          } catch (error) {
-            console.error('Error marking notification as read:', error);
-            // Continue with navigation even if marking as read fails
-          }
-
-          // Navigate to action route if available
-          if (item.actionable && item.actionRoute) {
-            // Convert string route to a typed route
-            if (item.actionRoute === '/messages/[id]' && item.actionParams?.id) {
-              router.push({
-                pathname: '/messages/[id]',
-                params: { id: item.actionParams.id }
-              });
-            } else if (item.actionRoute === '/home/check_in') {
-              router.push('/home/check_in');
-            } else if (item.actionRoute === '/home/support_network') {
-              router.push('/home/support_network');
-            } else if (item.actionRoute === '/community/[id]' && item.actionParams?.id) {
-              router.push({
-                pathname: '/community/[id]',
-                params: { id: item.actionParams.id }
-              });
-            } else {
-              console.log('Unknown route:', item.actionRoute);
-            }
-          }
-        } catch (error) {
-          console.error('Error handling notification tap:', error);
-        }
-      }}
-    >
-      <View style={[
-        styles.iconContainer,
-        {
-          backgroundColor:
-            item.type === 'support' ? '#FFE4E4' :
-              item.type === 'wellness' ? '#E3F2FD' :
-                item.type === 'community' ? '#E8F5E9' :
-                  item.type === 'buddy' ? '#E1F5FE' :
-                    '#FFF3E0'
-        }
-      ]}>
-        <FontAwesome
-          name={
-            item.type === 'support' ? 'heart' :
-              item.type === 'wellness' ? 'check-circle' :
-                item.type === 'community' ? 'users' :
-                  item.type === 'buddy' ? 'user-plus' :
-                    'exclamation-circle'
-          }
-          size={20}
-          color={
-            item.type === 'support' ? '#FF4444' :
-              item.type === 'wellness' ? '#2196F3' :
-                item.type === 'community' ? '#4CAF50' :
-                  item.type === 'buddy' ? '#03A9F4' :
-                    '#FF9800'
-          }
-        />
-      </View>
-
-      <View style={styles.textContainer}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.message}>{item.message}</Text>
-      </View>
-
-      <View style={styles.rightContainer}>
-        <Text style={styles.time}>{typeof item.time === 'string' ? item.time : new Date(item.time).toLocaleDateString()}</Text>
-        {!item.read && (
-          <View style={styles.unreadDot} />
-        )}
-      </View>
-    </Pressable>
+    <SwipeableNotificationItem
+      item={item}
+      onPress={handleNotificationPress}
+      onDelete={deleteNotification}
+    />
   );
 
   // Render section header
@@ -502,6 +396,22 @@ export default function NotificationsScreen() {
   );
 }
 
+// Mock data for fallback when API isn't available
+const MOCK_NOTIFICATIONS: Notification[] = [
+  {
+    id: '1',
+    type: 'support',
+    title: 'Support Request',
+    message: 'Sarah wants to check in with you',
+    time: '5 min ago',
+    read: false,
+    actionable: true,
+    actionRoute: '/messages/[id]',
+    actionParams: { id: 'sarah123' }
+  },
+  // ... other mock notifications ...
+];
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -579,52 +489,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 20,
-  },
-  notificationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
-  },
-  unreadNotification: {
-    backgroundColor: '#F8FAFD',
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  textContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  message: {
-    fontSize: 14,
-    color: '#666',
-  },
-  rightContainer: {
-    alignItems: 'flex-end',
-    marginLeft: 8,
-  },
-  time: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2196F3',
   },
   sectionHeader: {
     fontSize: 14,

@@ -7,6 +7,10 @@ import { getApiUrl } from './apiConfig';
 
 const API_URL = getApiUrl();
 
+// Track recently created notifications to prevent duplicates
+const recentNotifications = new Set<string>();
+const DUPLICATE_THRESHOLD_MS = 5000; // 5 seconds threshold
+
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -20,6 +24,7 @@ export class NotificationService {
   private static instance: NotificationService;
   private isInitialized = false;
   private pushToken: string | null = null;
+  private notificationReceivedListener: any = null;
 
   private constructor() { }
 
@@ -49,8 +54,14 @@ export class NotificationService {
         }),
       });
       
-      // Set up notification received handler
-      Notifications.addNotificationReceivedListener(notification => {
+      // Clean up any existing listeners to prevent duplicates
+      if (this.notificationReceivedListener) {
+        this.notificationReceivedListener.remove();
+        this.notificationReceivedListener = null;
+      }
+      
+      // Set up notification received handler (only once)
+      this.notificationReceivedListener = Notifications.addNotificationReceivedListener(notification => {
         console.log('Notification received in foreground:', notification);
       });
       
@@ -90,6 +101,15 @@ export class NotificationService {
       console.error('Error initializing notification service:', error);
       return false;
     }
+  }
+
+  // Clean up resources when app is unmounted
+  cleanup() {
+    if (this.notificationReceivedListener) {
+      this.notificationReceivedListener.remove();
+      this.notificationReceivedListener = null;
+    }
+    recentNotifications.clear();
   }
 
   // Create notification channels for Android
@@ -186,7 +206,7 @@ export class NotificationService {
     }
   }
 
-  // Schedule a local notification
+  // Schedule a local notification with duplicate prevention
   async scheduleLocalNotification(
     title: string,
     body: string,
@@ -194,6 +214,38 @@ export class NotificationService {
     triggerInput: any = null
   ) {
     try {
+      // Generate a content hash to identify duplicate notifications
+      const contentHash = `${title}:${body}`;
+      
+      // Check if this exact notification was recently scheduled
+      if (recentNotifications.has(contentHash)) {
+        console.log('Preventing duplicate notification:', contentHash);
+        return null;
+      }
+      
+      // Special handling for check-in notifications - only allow one at a time
+      if (data.isCheckInComplete) {
+        const checkInHash = 'check-in-complete';
+        if (recentNotifications.has(checkInHash)) {
+          console.log('Preventing duplicate check-in notification');
+          return null;
+        }
+        recentNotifications.add(checkInHash);
+        
+        // Automatically clear the check-in flag after threshold period
+        setTimeout(() => {
+          recentNotifications.delete(checkInHash);
+        }, DUPLICATE_THRESHOLD_MS);
+      }
+      
+      // Add to recent notifications to prevent immediate duplicates
+      recentNotifications.add(contentHash);
+      
+      // Remove from set after threshold to allow future notifications
+      setTimeout(() => {
+        recentNotifications.delete(contentHash);
+      }, DUPLICATE_THRESHOLD_MS);
+      
       // Ensure the notification channel is properly set up on Android
       if (Platform.OS === 'android') {
         const channelId = data.type === 'wellness' ? 'check-in-reminders' : 'default';
@@ -234,34 +286,16 @@ export class NotificationService {
     try {
       console.log('Sending test notification');
       
-      // Make sure notification handler is properly set up
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-        }),
-      });
-      
-      // Get the current badge count and increment it
-      const notifications = await Notifications.getPresentedNotificationsAsync();
-      const currentBadgeCount = notifications.length;
-      
       // Schedule an immediate notification
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Check-In Available',
-          body: 'Your next check-in is now available. How are you feeling today?',
-          data: { 
-            type: 'wellness',
-            actionable: true,
-            actionRoute: '/home/check_in'
-          },
-          sound: 'default',
-          badge: currentBadgeCount + 1,
-        },
-        trigger: null, // null trigger means send immediately
-      });
+      const notificationId = await this.scheduleLocalNotification(
+        'Check-In Available',
+        'Your next check-in is now available. How are you feeling today?',
+        { 
+          type: 'wellness',
+          actionable: true,
+          actionRoute: '/home/check_in'
+        }
+      );
       
       console.log('Test notification scheduled with ID:', notificationId);
       return notificationId;

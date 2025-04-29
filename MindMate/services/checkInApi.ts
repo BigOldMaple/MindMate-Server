@@ -45,6 +45,9 @@ export const checkInApi = {
     try {
       const headers = await getAuthHeaders();
       
+      // Single console log for submission
+      console.log('Submitting check-in data:', data);
+      
       const response = await fetch(`${API_URL}/check-in`, {
         method: 'POST',
         headers,
@@ -64,6 +67,19 @@ export const checkInApi = {
         const nextAvailableTime = new Date();
         nextAvailableTime.setHours(nextAvailableTime.getHours() + 24); // 24-hour cooldown
         await SecureStore.setItemAsync('nextCheckInTime', nextAvailableTime.toISOString());
+        
+        // Create a SINGLE check-in complete notification
+        // This is the only place we should create this notification
+        const { notificationService } = require('../services/notificationService');
+        await notificationService.sendLocalNotification(
+          'Check-In Complete',
+          `You rated your mood as ${data.mood.label} ${data.mood.score >= 4 ? '😄' : '😊'} and logged ${data.activities.length} activities.`,
+          {
+            type: 'wellness',
+            isCheckInComplete: true // Flag to identify this specific notification type
+          }
+        );
+        
       } catch (cacheError) {
         console.error('Failed to cache check-in status:', cacheError);
         // Continue even if caching fails

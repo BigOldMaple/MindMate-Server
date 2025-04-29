@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Pressable } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { getApiUrl } from '@/services/apiConfig';
 import * as SecureStore from 'expo-secure-store';
@@ -277,9 +277,20 @@ export default function AnalyzedDataScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Analyzed Data' }} />
+      <Stack.Screen options={{ headerShown: false }} />
       
       <View style={styles.container}>
+        {/* Custom Header */}
+        <View style={styles.customHeader}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome name="arrow-left" size={20} color="#666" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Analyzed Data</Text>
+        </View>
+        
         <View style={styles.header}>
           <Text style={styles.title}>
             Data Analyzed for {source === 'baseline' ? 'Baseline' : 'Recent'} Assessment
@@ -345,6 +356,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F6FA',
+  },
+  customHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  backButton: {
+    padding: 10,
+    marginRight: 10,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
   },
   header: {
     padding: 16,

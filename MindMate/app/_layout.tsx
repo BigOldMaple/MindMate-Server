@@ -17,6 +17,8 @@ import * as TaskManager from 'expo-task-manager';
 import * as Linking from 'expo-linking';
 import { Camera } from 'expo-camera';
 import * as Audio from 'expo-av';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 // Import the Health Connect services
 import { 
   initializeHealthConnect, 
@@ -468,24 +470,26 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      {__DEV__ && apiUrl && (
-        <Text style={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          right: 10,
-          fontSize: 10,
-          color: 'gray',
-          zIndex: 9999,
-          backgroundColor: 'rgba(255,255,255,0.7)',
-          padding: 5,
-        }}>
-          API URL: {apiUrl}
-        </Text>
-      )}
-      <RootLayoutNav />
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        {__DEV__ && apiUrl && (
+          <Text style={{
+            position: 'absolute',
+            bottom: 10,
+            left: 10,
+            right: 10,
+            fontSize: 10,
+            color: 'gray',
+            zIndex: 9999,
+            backgroundColor: 'rgba(255,255,255,0.7)',
+            padding: 5,
+          }}>
+            API URL: {apiUrl}
+          </Text>
+        )}
+        <RootLayoutNav />
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 
