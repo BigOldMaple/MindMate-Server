@@ -19,8 +19,15 @@ export interface TestDataGenerationResponse {
     daysGenerated: number;
     sleepRecords: number;
     activityRecords: number;
-    checkIns: number;
+    exerciseRecords: number;
   };
+}
+
+// Interface for clear test data response
+export interface ClearTestDataResponse {
+  success: boolean;
+  message: string;
+  count?: number;
 }
 
 export const healthTestingApi = {
@@ -58,7 +65,7 @@ export const healthTestingApi = {
   /**
    * Clear all test data for a specific date range
    */
-  async clearTestData(startDate: string, endDate: string): Promise<{ success: boolean; message: string }> {
+  async clearTestData(startDate: string, endDate: string): Promise<ClearTestDataResponse> {
     try {
       const token = await SecureStore.getItemAsync('userToken');
       if (!token) {
