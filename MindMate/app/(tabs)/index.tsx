@@ -312,27 +312,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Health Sync Card */}
-      <View style={styles.sectionContainer}>
-        <View style={styles.syncCard}>
-          <View style={styles.syncHeader}>
-            <Text style={styles.cardTitle}>Health Data</Text>
-            <Pressable
-              onPress={() => Alert.alert("Health Data", "Detailed view coming soon!")}
-              style={styles.syncViewDetails}
-            >
-              <Text style={styles.syncViewDetailsText}>View Data</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.syncDescription}>
-            Sync your health data to improve wellness insights and recommendations
-          </Text>
-          <View style={styles.syncButtonContainer}>
-            <SyncHealthDataButton />
-          </View>
-        </View>
-      </View>
-
       {/* Developer Options Section - Collapsible */}
       <View style={styles.sectionContainer}>
         <Pressable
@@ -349,10 +328,21 @@ export default function HomeScreen() {
 
         {showDevOptions && (
           <View style={styles.devOptionsContent}>
+            {/* Mental Health Analysis Section */}
             <Text style={styles.devOptionsSubtitle}>Mental Health Analysis</Text>
             <EstablishBaselineButton />
             <AnalyzeRecentButton />
             <ClearAnalysisButton />
+
+            {/* Add a new Testing Tools Section */}
+            <Text style={[styles.devOptionsSubtitle, { marginTop: 16 }]}>Testing Tools</Text>
+            <Pressable
+              style={styles.testButton}
+              onPress={() => router.push('./test/health-data-generator')}
+            >
+              <FontAwesome name="flask" size={16} color="#FFFFFF" style={styles.buttonIcon} />
+              <Text style={styles.testButtonText}>Health Data Test Generator</Text>
+            </Pressable>
           </View>
         )}
       </View>
@@ -621,5 +611,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666',
     marginBottom: 12,
-  }
+  },
+  testButton: {
+    backgroundColor: '#9C27B0', 
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginVertical: 6,
+  },
+  testButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
 });
