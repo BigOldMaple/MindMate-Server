@@ -6,6 +6,7 @@ import { HealthData } from '../Database/HealthDataSchema';
 import { Types } from 'mongoose';
 import { ApiError } from '../middleware/error';
 import { DeviceToken } from '../Database/DeviceTokenSchema';
+import { healthTestingService } from '../services/healthTestingService';
 
 // Define interfaces for type safety
 interface Exercise {
@@ -551,6 +552,75 @@ router.delete('/:id/metric/:metricType', authenticateToken, async (req: any, res
       console.error('Error deleting metric data:', error);
       res.status(500).json({ error: 'Failed to delete metric data' });
     }
+  }
+});
+
+// Generate test data
+router.post('/generate-test-data', authenticateToken, async (req: any, res) => {
+  try {
+    const { pattern, startDate, days } = req.body;
+
+    // Validate required parameters
+    if (!pattern || !startDate || !days) {
+      return res.status(400).json({ 
+        error: 'Pattern, start date, and number of days are required' 
+      });
+    }
+
+    // Validate pattern
+    const validPatterns = ['good', 'declining', 'critical', 'improving', 'fluctuating'];
+    if (!validPatterns.includes(pattern)) {
+      return res.status(400).json({
+        error: `Invalid pattern. Must be one of: ${validPatterns.join(', ')}`
+      });
+    }
+
+    // Generate the test data
+    const result = await healthTestingService.generateTestData({
+      pattern,
+      startDate,
+      days,
+      userId: req.userId
+    });
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.message });
+    }
+  } catch (error) {
+    console.error('Error generating test data:', error);
+    res.status(500).json({ error: 'Failed to generate test data' });
+  }
+});
+
+// Clear test data
+router.post('/clear-test-data', authenticateToken, async (req: any, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+
+    // Validate required parameters
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        error: 'Start date and end date are required' 
+      });
+    }
+
+    // Clear the test data
+    const result = await healthTestingService.clearTestData(
+      req.userId,
+      startDate,
+      endDate
+    );
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.message });
+    }
+  } catch (error) {
+    console.error('Error clearing test data:', error);
+    res.status(500).json({ error: 'Failed to clear test data' });
   }
 });
 
