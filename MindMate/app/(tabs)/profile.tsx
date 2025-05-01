@@ -5,6 +5,9 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { profileApi, UserProfile, EmergencyContact } from '../../services/profileApi';
+import { mentalHealthApi } from '../../services/mentalHealthApi';
+import MentalHealthHistoryCard from '../../components/MentalHealthHistoryCard';
+import MentalHealthDetailsModal from '../../components/MentalHealthDetailsModal';
 import React from 'react';
 
 interface EditModalProps {
@@ -156,6 +159,45 @@ function EmergencyContactModal({ visible, onClose, onSave, currentContact }: Eme
     );
 }
 
+// Helper function to group assessments by month and day
+function groupAssessmentsByMonth(assessments: any[]) {
+  // First group by month
+  const byMonth: Record<string, any[]> = {};
+  
+  assessments.forEach(assessment => {
+    const date = new Date(assessment.timestamp);
+    const monthYear = date.toLocaleDateString('en-US', { 
+      month: 'long', 
+      year: 'numeric' 
+    });
+    
+    if (!byMonth[monthYear]) {
+      byMonth[monthYear] = [];
+    }
+    
+    byMonth[monthYear].push(assessment);
+  });
+  
+  // Then sort each month's assessments by day (descending order)
+  Object.keys(byMonth).forEach(month => {
+    // Sort assessments by day, with most recent first
+    byMonth[month].sort((a, b) => {
+      const dateA = new Date(a.timestamp);
+      const dateB = new Date(b.timestamp);
+      
+      // If different days, sort by day
+      if (dateA.getDate() !== dateB.getDate()) {
+        return dateB.getDate() - dateA.getDate();
+      }
+      
+      // If same day, sort by time (most recent first)
+      return dateB.getTime() - dateA.getTime();
+    });
+  });
+  
+  return byMonth;
+}
+
 export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState('account');
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -163,9 +205,24 @@ export default function ProfileScreen() {
     const [editingField, setEditingField] = useState<string | null>(null);
     const { user } = useAuth();
 
+    // Mental Health History state
+    const [mentalHealthHistory, setMentalHealthHistory] = useState<any[]>([]);
+    const [baselineHistory, setBaselineHistory] = useState<any[]>([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [isLoadingBaselines, setIsLoadingBaselines] = useState(false);
+    const [selectedAssessment, setSelectedAssessment] = useState<any>(null);
+    const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+    const [showAllBaselines, setShowAllBaselines] = useState(false);
+
     useEffect(() => {
         fetchProfile();
     }, []);
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            fetchMentalHealthHistory();
+        }
+    }, [activeTab]);
 
     const fetchProfile = async () => {
         try {
@@ -176,6 +233,26 @@ export default function ProfileScreen() {
             Alert.alert('Error', 'Failed to load profile');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const fetchMentalHealthHistory = async () => {
+        try {
+            setIsLoadingHistory(true);
+            setIsLoadingBaselines(true);
+            
+            // Fetch regular assessments
+            const assessments = await mentalHealthApi.getAssessmentHistory(20);
+            setMentalHealthHistory(assessments);
+            
+            // Fetch baseline assessments separately
+            const baselines = await mentalHealthApi.getBaselineHistory(5);
+            setBaselineHistory(baselines);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to load mental health history');
+        } finally {
+            setIsLoadingHistory(false);
+            setIsLoadingBaselines(false);
         }
     };
 
@@ -198,6 +275,15 @@ export default function ProfileScreen() {
         } catch (error) {
             throw error;
         }
+    };
+
+    const openAssessmentDetails = (assessment: any) => {
+        setSelectedAssessment(assessment);
+        setDetailsModalVisible(true);
+    };
+    
+    const closeAssessmentDetails = () => {
+        setDetailsModalVisible(false);
     };
 
     if (isLoading) {
@@ -344,49 +430,182 @@ export default function ProfileScreen() {
                         />
                     </>
                 )}
-        
-{/* Mental Health History Tab*/}
 
-        {activeTab === 'history' && (
-          <ScrollView style={styles.historyContent}>
-            {/* Month Section */}
-            <Text style={styles.monthHeader}>November 2023</Text>
-
-            {/* History Cards */}
-            <Pressable style={styles.historyCard}>
-              <View style={styles.historyCardContent}>
-                <View style={styles.dateScoreContainer}>
-                  <Text style={styles.dateText}>Nov28</Text>
-                  <View style={styles.scoreContainer}>
-                    <Text style={styles.scoreText}>86% </Text>
-                    <FontAwesome name="arrow-up" size={12} color="#4CAF50" />
-                  </View>
-                </View>
-                <Text style={styles.noteText}>Feeling more energetic, sleep improving</Text>
-                <Text style={styles.detailsLink}>View Details</Text>
-              </View>
-            </Pressable>
-
-            <Pressable style={styles.historyCard}>
-              <View style={styles.historyCardContent}>
-                <View style={styles.dateScoreContainer}>
-                  <Text style={styles.dateText}>Nov21</Text>
-                  <View style={styles.scoreContainer}>
-                    <Text style={styles.scoreText}>72% </Text>
-                    <FontAwesome name="minus" size={12} color="#FFA726" />
-                  </View>
-                </View>
-                <Text style={styles.noteText}>Regular day, maintaining routine</Text>
-                <Text style={styles.detailsLink}>View Details</Text>
-              </View>
-            </Pressable>
-
-
-          </ScrollView>
-        )}
-      </ScrollView>
-    </View>
-  );
+                {/* Mental Health History Tab - UPDATED */}
+                {activeTab === 'history' && (
+                    <View style={styles.historyContent}>
+                        {isLoadingHistory && isLoadingBaselines ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color="#2196F3" />
+                            </View>
+                        ) : mentalHealthHistory.length === 0 && baselineHistory.length === 0 ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyStateText}>
+                                    No mental health assessments found. Complete a mental health assessment to see your history.
+                                </Text>
+                            </View>
+                        ) : (
+                            <View>
+                                {/* Baseline Section */}
+                                {baselineHistory.length > 0 && (
+                                    <View style={styles.baselineSection}>
+                                        <Text style={styles.baselineSectionHeader}>BASELINE</Text>
+                                        <Text style={styles.baselineHelperText}>
+                                            Your active baseline establishes your normal mental health patterns
+                                            and is used as a reference point for all analyses.
+                                        </Text>
+                                        
+                                        {/* Most recent baseline - always shown */}
+                                        <View style={styles.currentBaselineCard}>
+                                            <Text style={styles.currentBaselineLabel}>Current Active Baseline</Text>
+                                            <MentalHealthHistoryCard
+                                                date={baselineHistory[0].establishedAt}
+                                                status={baselineHistory[0].rawAssessmentData?.mentalHealthStatus || 'stable'}
+                                                confidenceScore={baselineHistory[0].confidenceScore}
+                                                notes={"Active Mental Health Baseline"}
+                                                onPress={() => openAssessmentDetails({
+                                                    _id: baselineHistory[0]._id,
+                                                    timestamp: baselineHistory[0].establishedAt,
+                                                    mentalHealthStatus: baselineHistory[0].rawAssessmentData?.mentalHealthStatus || 'stable',
+                                                    confidenceScore: baselineHistory[0].confidenceScore,
+                                                    reasoningData: {
+                                                        sleepQuality: baselineHistory[0].baselineMetrics?.sleepQuality,
+                                                        sleepHours: baselineHistory[0].baselineMetrics?.sleepHours,
+                                                        activityLevel: baselineHistory[0].baselineMetrics?.activityLevel,
+                                                        checkInMood: baselineHistory[0].baselineMetrics?.averageMoodScore,
+                                                        stepsPerDay: baselineHistory[0].baselineMetrics?.averageStepsPerDay,
+                                                        recentExerciseMinutes: baselineHistory[0].baselineMetrics?.exerciseMinutesPerWeek,
+                                                        significantChanges: baselineHistory[0].baselineMetrics?.significantPatterns
+                                                    },
+                                                    metadata: { analysisType: 'baseline' }
+                                                })}
+                                            />
+                                        </View>
+                                        
+                                        {/* Toggle button - only shown if there are previous baselines */}
+                                        {baselineHistory.length > 1 && (
+                                            <Pressable 
+                                                style={styles.baselineToggleButton}
+                                                onPress={() => setShowAllBaselines(!showAllBaselines)}
+                                            >
+                                                <Text style={styles.baselineToggleText}>
+                                                    {showAllBaselines ? 'Hide Previous Baselines' : 'Show Previous Baselines'}
+                                                </Text>
+                                                <FontAwesome 
+                                                    name={showAllBaselines ? 'chevron-up' : 'chevron-down'} 
+                                                    size={12} 
+                                                    color="#2196F3" 
+                                                />
+                                            </Pressable>
+                                        )}
+                                        
+                                        {/* Previous baselines - conditionally shown */}
+                                        {showAllBaselines && baselineHistory.length > 1 && (
+                                            <View style={styles.previousBaselinesContainer}>
+                                                <Text style={styles.previousBaselinesHeader}>Previous Baselines</Text>
+                                                
+                                                {baselineHistory.slice(1).map((baseline) => (
+                                                    <View key={baseline._id} style={styles.baselineCard}>
+                                                        <MentalHealthHistoryCard
+                                                            date={baseline.establishedAt}
+                                                            status={baseline.rawAssessmentData?.mentalHealthStatus || 'stable'}
+                                                            confidenceScore={baseline.confidenceScore}
+                                                            notes={"Previous Mental Health Baseline"}
+                                                            onPress={() => openAssessmentDetails({
+                                                                _id: baseline._id,
+                                                                timestamp: baseline.establishedAt,
+                                                                mentalHealthStatus: baseline.rawAssessmentData?.mentalHealthStatus || 'stable',
+                                                                confidenceScore: baseline.confidenceScore,
+                                                                reasoningData: {
+                                                                    sleepQuality: baseline.baselineMetrics?.sleepQuality,
+                                                                    sleepHours: baseline.baselineMetrics?.sleepHours,
+                                                                    activityLevel: baseline.baselineMetrics?.activityLevel,
+                                                                    checkInMood: baseline.baselineMetrics?.averageMoodScore,
+                                                                    stepsPerDay: baseline.baselineMetrics?.averageStepsPerDay,
+                                                                    recentExerciseMinutes: baseline.baselineMetrics?.exerciseMinutesPerWeek,
+                                                                    significantChanges: baseline.baselineMetrics?.significantPatterns
+                                                                },
+                                                                metadata: { analysisType: 'baseline' }
+                                                            })}
+                                                        />
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
+                                
+                                {/* Regular Assessments Section */}
+                                {mentalHealthHistory.length > 0 && (
+                                    <View style={styles.regularAssessmentsSection}>
+                                        <Text style={styles.regularAssessmentsSectionHeader}>MENTAL HEALTH ASSESSMENTS</Text>
+                                        
+                                        {Object.entries(groupAssessmentsByMonth(mentalHealthHistory)).map(([month, assessments]) => {
+                                            // Track the current day being rendered
+                                            let currentDay: number | null = null;
+                                            
+                                            return (
+                                                <View key={month}>
+                                                    <Text style={styles.monthHeader}>{month}</Text>
+                                                    
+                                                    {assessments.map((assessment) => {
+                                                        const date = new Date(assessment.timestamp);
+                                                        const day = date.getDate();
+                                                        
+                                                        // Determine if this is a new day
+                                                        const isNewDay = currentDay !== day;
+                                                        currentDay = day;
+                                                        
+                                                        return (
+                                                            <React.Fragment key={assessment._id}>
+                                                                {isNewDay && (
+                                                                    <Text style={styles.dayHeader}>
+                                                                        {date.toLocaleDateString('en-US', { 
+                                                                            weekday: 'short', 
+                                                                            day: 'numeric' 
+                                                                        })}
+                                                                    </Text>
+                                                                )}
+                                                                
+                                                                <View style={[
+                                                                    !isNewDay && styles.sameDayCard
+                                                                ]}>
+                                                                    <MentalHealthHistoryCard
+                                                                        date={assessment.timestamp}
+                                                                        status={assessment.mentalHealthStatus}
+                                                                        confidenceScore={assessment.confidenceScore}
+                                                                        notes={assessment.reasoningData?.checkInNotes}
+                                                                        onPress={() => openAssessmentDetails(assessment)}
+                                                                    />
+                                                                </View>
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                )}
+                            </View>
+                        )}
+                        
+                        {selectedAssessment && (
+                            <MentalHealthDetailsModal
+                                visible={detailsModalVisible}
+                                onClose={closeAssessmentDetails}
+                                timestamp={selectedAssessment.timestamp}
+                                status={selectedAssessment.mentalHealthStatus}
+                                confidenceScore={selectedAssessment.confidenceScore}
+                                reasoningData={selectedAssessment.reasoningData || {}}
+                                analysisType={selectedAssessment.metadata?.analysisType}
+                                assessmentId={selectedAssessment._id}
+                            />
+                        )}
+                    </View>
+                )}
+            </ScrollView>
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
@@ -395,6 +614,7 @@ const styles = StyleSheet.create({
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: '#F5F6FA',
+      minHeight: 200,
   },
   container: {
       flex: 1,
@@ -573,7 +793,7 @@ const styles = StyleSheet.create({
       color: 'white',
       fontWeight: '600',
   },
-  // History Tab Styles
+  // History Tab Styles - UPDATED
   historyContent: {
       flex: 1,
       padding: 16,
@@ -584,82 +804,97 @@ const styles = StyleSheet.create({
       marginBottom: 8,
       fontWeight: '500',
   },
-  historyCard: {
-      backgroundColor: 'white',
-      borderRadius: 12,
-      marginBottom: 12,
-      padding: 16,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
+  dayHeader: {
+      fontSize: 13,
+      color: '#888',
+      marginTop: 12,
+      marginBottom: 6,
+      fontWeight: '500',
   },
-  historyCardContent: {
+  sameDayCard: {
+      marginLeft: 12,
+      borderLeftWidth: 1,
+      borderLeftColor: '#E0E0E0',
+  },
+  // Baseline section styles
+  baselineSection: {
+      marginBottom: 24,
+      backgroundColor: '#EFF8FF',
+      borderRadius: 12,
+      padding: 16,
+      borderLeftWidth: 4,
+      borderLeftColor: '#2196F3',
+  },
+  baselineSectionHeader: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#2196F3',
+      marginBottom: 8,
+  },
+  baselineHelperText: {
+      fontSize: 13,
+      color: '#666',
+      marginBottom: 12,
+      lineHeight: 18,
+  },
+  currentBaselineCard: {
+      marginBottom: 12,
+  },
+  currentBaselineLabel: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: '#2196F3',
+      marginBottom: 4,
+  },
+  baselineToggleButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      marginVertical: 8,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: '#2196F3',
       gap: 8,
   },
-  dateScoreContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-  },
-  dateText: {
-      fontSize: 16,
-      fontWeight: '600',
-  },
-  scoreContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-  },
-  scoreText: {
-      fontSize: 16,
-      fontWeight: '600',
+  baselineToggleText: {
+      fontSize: 14,
       color: '#2196F3',
+      fontWeight: '500',
   },
-  noteText: {
+  previousBaselinesContainer: {
+      marginTop: 8,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: '#D0E6FF',
+  },
+  previousBaselinesHeader: {
       fontSize: 14,
       color: '#666',
+      fontWeight: '500',
+      marginBottom: 8,
   },
-  detailsLink: {
-      fontSize: 14,
-      color: '#2196F3',
-      alignSelf: 'flex-end',
+  baselineCard: {
+      marginBottom: 8,
   },
-  // Add button style for edit icons
-  editButton: {
-      padding: 8,
-      borderRadius: 20,
-  },
-  // Error state styles
-  errorContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-  },
-  errorText: {
-      fontSize: 16,
-      color: '#FF3B30',
-      textAlign: 'center',
+  regularAssessmentsSection: {
       marginBottom: 16,
   },
-  retryButton: {
-      backgroundColor: '#2196F3',
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-      borderRadius: 8,
-  },
-  retryButtonText: {
-      color: 'white',
-      fontWeight: '600',
+  regularAssessmentsSectionHeader: {
+      fontSize: 15,
+      fontWeight: '500',
+      color: '#555',
+      marginBottom: 16,
   },
   // Empty state styles
   emptyState: {
-      flex: 1,
-      justifyContent: 'center',
       alignItems: 'center',
+      justifyContent: 'center',
       padding: 32,
+      backgroundColor: 'white',
+      borderRadius: 12,
+      marginTop: 16,
   },
   emptyStateText: {
       fontSize: 16,

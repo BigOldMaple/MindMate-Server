@@ -294,5 +294,24 @@ export const mentalHealthApi = {
       console.error('Get support statistics error:', error);
       throw error;
     }
-  }
+  },
+    /**
+   * Get baseline history
+   */
+    async getBaselineHistory(limit: number = 5): Promise<any[]> {
+      try {
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${API_URL}/mental-health/baseline/history?limit=${limit}`, { headers });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch baseline history');
+        }
+        
+        return response.json();
+      } catch (error) {
+        console.error('Get baseline history error:', error);
+        throw error;
+      }
+    }
 };
+

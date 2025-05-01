@@ -82,8 +82,9 @@ export default function AnalyzedDataScreen() {
   // Don't specify generic type for useLocalSearchParams to avoid Route constraint error
   const params = useLocalSearchParams();
   const source = params.source as string;
+  const assessmentId = params.assessmentId as string | undefined;
   const dataCount = params.dataCount ? JSON.parse(params.dataCount as string) : {};
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [healthData, setHealthData] = useState<HealthData[]>([]);
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
@@ -101,7 +102,7 @@ export default function AnalyzedDataScreen() {
       // Check for discrepancy in check-in counts
       const analyzedCount = dataCount.checkIns || 0;
       const displayedCount = checkIns.length;
-      
+
       if (analyzedCount > displayedCount) {
         // Add a warning that not all analyzed check-ins are displayed
         setWarning(`Note: Only ${displayedCount} of ${analyzedCount} check-ins are shown. Some historical check-ins may not be visible.`);
@@ -114,19 +115,31 @@ export default function AnalyzedDataScreen() {
       setIsLoading(true);
       setError(null);
       setWarning(null);
-      
+
       const token = await SecureStore.getItemAsync('userToken');
-      
+
       if (!token) {
         setError('Not authenticated');
         setIsLoading(false);
         return;
       }
 
-      // Get the endpoint based on the source
-      const endpoint = source === 'baseline' 
-        ? `${getApiUrl()}/mental-health/baseline/analyzed-data`
-        : `${getApiUrl()}/mental-health/recent/analyzed-data`;
+      // Determine the endpoint based on source and assessmentId
+      let endpoint = '';
+
+      if (assessmentId) {
+        // Fetch data for a specific assessment or baseline
+        if (source === 'baseline') {
+          endpoint = `${getApiUrl()}/mental-health/baseline/${assessmentId}/analyzed-data`;
+        } else {
+          endpoint = `${getApiUrl()}/mental-health/assessment/${assessmentId}/analyzed-data`;
+        }
+      } else {
+        // Default endpoints for recent analysis with no specific ID
+        endpoint = source === 'baseline'
+          ? `${getApiUrl()}/mental-health/baseline/analyzed-data`
+          : `${getApiUrl()}/mental-health/recent/analyzed-data`;
+      }
 
       const response = await fetch(endpoint, {
         method: 'GET',
@@ -143,7 +156,7 @@ export default function AnalyzedDataScreen() {
       const data = await response.json();
       setHealthData(data.healthData || []);
       setCheckIns(data.checkIns || []);
-      
+
       // If the response includes check-ins count info, compare it
       if (data.checkInsCount) {
         const { displayed, analyzed } = data.checkInsCount;
@@ -151,7 +164,7 @@ export default function AnalyzedDataScreen() {
           setWarning(`Note: Only ${displayed} of ${analyzed} check-ins are shown. Some historical check-ins may not be visible.`);
         }
       }
-      
+
       setIsLoading(false);
     } catch (err) {
       console.error('Error fetching analyzed data:', err);
@@ -169,13 +182,13 @@ export default function AnalyzedDataScreen() {
     if (healthData.length === 0) {
       return <Text style={styles.noDataText}>No health data available</Text>;
     }
-  
+
     return (
       <ScrollView style={styles.dataContainer}>
         {healthData.map((item, index) => (
           <View key={index} style={styles.dataItem}>
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>
-            
+
             {item.sleep ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Sleep</Text>
@@ -188,7 +201,7 @@ export default function AnalyzedDataScreen() {
                 ) : null}
               </View>
             ) : null}
-            
+
             {item.summary ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Activity</Text>
@@ -199,13 +212,13 @@ export default function AnalyzedDataScreen() {
                   <Text>Exercise: {Math.round(item.summary.totalExerciseSeconds / 60)} minutes</Text>
                 ) : null}
                 {/* Add a fallback text if no activity data exists */}
-                {(!item.summary.totalSteps || item.summary.totalSteps <= 0) && 
-                 (!item.summary.totalExerciseSeconds || item.summary.totalExerciseSeconds <= 0) ? (
+                {(!item.summary.totalSteps || item.summary.totalSteps <= 0) &&
+                  (!item.summary.totalExerciseSeconds || item.summary.totalExerciseSeconds <= 0) ? (
                   <Text>No activity data recorded</Text>
                 ) : null}
               </View>
             ) : null}
-            
+
             {item.exercises && item.exercises.length > 0 ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Exercise Sessions</Text>
@@ -220,7 +233,7 @@ export default function AnalyzedDataScreen() {
                 ))}
               </View>
             ) : null}
-  
+
             {/* Ensure there's always some content */}
             {!item.sleep && !item.summary && (!item.exercises || item.exercises.length === 0) ? (
               <View style={styles.metricContainer}>
@@ -237,17 +250,17 @@ export default function AnalyzedDataScreen() {
     if (checkIns.length === 0) {
       return <Text style={styles.noDataText}>No check-in data available</Text>;
     }
-  
+
     return (
       <ScrollView style={styles.dataContainer}>
         {checkIns.map((checkIn, index) => (
           <View key={index} style={styles.dataItem}>
             <Text style={styles.dateText}>{formatDate(checkIn.timestamp)}</Text>
-            
+
             <View style={styles.metricContainer}>
               <Text style={styles.metricHeader}>Mood</Text>
               <Text>Score: {checkIn.mood.score}/5 ({checkIn.mood.label})</Text>
-              
+
               {/* Display notes from either notes field or mood.description */}
               {(checkIn.notes || (checkIn.mood && checkIn.mood.description)) ? (
                 <View style={styles.notesContainer}>
@@ -258,7 +271,7 @@ export default function AnalyzedDataScreen() {
                 </View>
               ) : null}
             </View>
-            
+
             {checkIn.activities && checkIn.activities.length > 0 ? (
               <View style={styles.metricContainer}>
                 <Text style={styles.metricHeader}>Activities</Text>
@@ -278,7 +291,7 @@ export default function AnalyzedDataScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       <View style={styles.container}>
         {/* Custom Header */}
         <View style={styles.customHeader}>
@@ -290,26 +303,29 @@ export default function AnalyzedDataScreen() {
           </Pressable>
           <Text style={styles.headerTitle}>Analyzed Data</Text>
         </View>
-        
+
         <View style={styles.header}>
           <Text style={styles.title}>
-            Data Analyzed for {source === 'baseline' ? 'Baseline' : 'Recent'} Assessment
+            {assessmentId
+              ? `Data for ${source === 'baseline' ? 'Baseline' : 'Assessment'} from ${formatDate(healthData[0]?.date || new Date().toISOString())}`
+              : `Data Analyzed for ${source === 'baseline' ? 'Baseline' : 'Recent'} Assessment`
+            }
           </Text>
           <Text style={styles.subtitle}>
-            {source === 'baseline' 
-              ? `Based on ${dataCount.healthRecords || 0} health records and ${dataCount.checkIns || 0} check-ins`
-              : 'Most recent health and check-in data'}
+            {source === 'baseline'
+              ? `Based on ${dataCount.healthRecords || healthData.length} health records and ${dataCount.checkIns || checkIns.length} check-ins`
+              : 'Health and check-in data used for this analysis'}
           </Text>
         </View>
-        
+
         {warning ? (
           <View style={styles.warningContainer}>
             <Text style={styles.warningText}>{warning}</Text>
           </View>
         ) : null}
-        
+
         <View style={styles.tabContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'health' && styles.activeTab]}
             onPress={() => setActiveTab('health')}
           >
@@ -318,8 +334,8 @@ export default function AnalyzedDataScreen() {
               Health Data ({healthData.length})
             </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'checkIns' && styles.activeTab]}
             onPress={() => setActiveTab('checkIns')}
           >
@@ -329,7 +345,7 @@ export default function AnalyzedDataScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-        
+
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#1976D2" />

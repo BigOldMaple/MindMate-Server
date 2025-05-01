@@ -81,8 +81,8 @@ router.get('/baseline', authenticateToken, async (req: any, res) => {
 // Trigger a new standard mental health assessment (14-day analysis)
 router.post('/assess', authenticateToken, async (req: any, res) => {
   try {
-    // Trigger the LLM analysis
-    const analysisResult = await llmAnalysisService.analyzeMentalHealth(req.userId);
+    // Trigger the LLM analysis - using recent analysis as suggested by the available method
+    const analysisResult = await llmAnalysisService.analyzeRecentHealth(req.userId);
 
     // Format response to include key reasoning data
     const response = {
@@ -808,5 +808,134 @@ router.post('/admin/clear-assessments', authenticateToken, async (req: any, res)
     res.status(500).json({ error: 'Failed to clear mental health assessments' });
   }
 });
+// Get analyzed data for a specific assessment
+router.get('/assessment/:assessmentId/analyzed-data', authenticateToken, async (req: any, res) => {
+  try {
+    const { assessmentId } = req.params;
+    
+    // Validate that we have a valid MongoDB ObjectId
+    if (!Types.ObjectId.isValid(assessmentId)) {
+      return res.status(400).json({ error: 'Invalid assessment ID' });
+    }
+    
+    // Find the assessment to get the date range
+    const assessment = await MentalHealthState.findOne({
+      _id: new Types.ObjectId(assessmentId),
+      userId: new Types.ObjectId(req.userId)
+    });
+    
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+    
+    // Get the date range that was analyzed for this assessment
+    // Default to 3 days before the assessment for standard assessments
+    const endDate = new Date(assessment.timestamp);
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 3); // Default 3 days
+    
+    // If the assessment has metadata about the actual period analyzed, use that
+    if (assessment.metadata && assessment.metadata.analyzedPeriod) {
+      if (assessment.metadata.analyzedPeriod.startDate) {
+        startDate.setTime(new Date(assessment.metadata.analyzedPeriod.startDate).getTime());
+      }
+      
+      if (assessment.metadata.analyzedPeriod.endDate) {
+        endDate.setTime(new Date(assessment.metadata.analyzedPeriod.endDate).getTime());
+      }
+    }
+    
+    // Fetch health data for this period
+    const healthData = await HealthData.find({
+      userId: new Types.ObjectId(req.userId),
+      date: { $gte: startDate, $lte: endDate }
+    }).sort({ date: -1 }).lean();
+    
+    // Fetch check-ins for this period
+    const checkIns = await CheckIn.find({
+      userId: new Types.ObjectId(req.userId),
+      timestamp: { $gte: startDate, $lte: endDate }
+    }).sort({ timestamp: -1 }).lean();
+    
+    // Return the data
+    res.json({
+      analysisType: assessment.metadata?.analysisType || 'standard',
+      period: {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        totalDays: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+      },
+      healthData,
+      checkIns
+    });
+  } catch (error) {
+    console.error('Get assessment analyzed data error:', error);
+    res.status(500).json({ error: 'Failed to fetch assessment analyzed data' });
+  }
+});
 
+// Get analyzed data for a specific baseline
+router.get('/baseline/:baselineId/analyzed-data', authenticateToken, async (req: any, res) => {
+  try {
+    const { baselineId } = req.params;
+    
+    // Validate that we have a valid MongoDB ObjectId
+    if (!Types.ObjectId.isValid(baselineId)) {
+      return res.status(400).json({ error: 'Invalid baseline ID' });
+    }
+    
+    // Find the baseline to get the date range
+    const baseline = await MentalHealthBaseline.findOne({
+      _id: new Types.ObjectId(baselineId),
+      userId: new Types.ObjectId(req.userId)
+    });
+    
+    if (!baseline) {
+      return res.status(404).json({ error: 'Baseline not found' });
+    }
+    
+    // Get the date range for this baseline
+    const endDate = new Date(baseline.establishedAt);
+    const startDate = new Date(endDate);
+    
+    // If dataPoints has totalDays, use that to determine the start date
+    if (baseline.dataPoints && baseline.dataPoints.totalDays) {
+      startDate.setDate(startDate.getDate() - baseline.dataPoints.totalDays);
+    } else {
+      // Default to 30 days for baselines
+      startDate.setDate(startDate.getDate() - 30);
+    }
+    
+    // Fetch health data for this period
+    const healthData = await HealthData.find({
+      userId: new Types.ObjectId(req.userId),
+      date: { $gte: startDate, $lte: endDate }
+    }).sort({ date: -1 }).lean();
+    
+    // Fetch check-ins for this period
+    const checkIns = await CheckIn.find({
+      userId: new Types.ObjectId(req.userId),
+      timestamp: { $gte: startDate, $lte: endDate }
+    }).sort({ timestamp: -1 }).lean();
+    
+    // Return the data with information about what was analyzed vs what is displayed
+    res.json({
+      analysisType: 'baseline',
+      period: {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        totalDays: baseline.dataPoints?.totalDays || Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+      },
+      healthData,
+      checkIns,
+      checkInsCount: {
+        displayed: checkIns.length,
+        analyzed: baseline.dataPoints?.checkInsCount || checkIns.length
+      }
+    });
+  } catch (error) {
+    console.error('Get baseline analyzed data error:', error);
+    res.status(500).json({ error: 'Failed to fetch baseline analyzed data' });
+  }
+});
 export default router;
