@@ -158,16 +158,18 @@ router.post('/request', authenticateToken, async (req: any, res) => {
         ]);
 
         if (!recipient) {
-            throw new ApiError(404, 'User not found');
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        // Check if they are already buddy peers
+        // Check if they are already buddy peers - use early return pattern
         const isAlreadyBuddy = sender.buddyPeers.some(
             (buddy: BuddyPeer) => buddy.userId.toString() === recipient._id.toString()
         );
 
         if (isAlreadyBuddy) {
-            throw new ApiError(400, 'You are already buddy peers with this user');
+            return res.status(400).json({
+                error: 'You are already buddy peers with this user'
+            });
         }
 
         // Check if there's a pending request from sender to recipient
@@ -179,7 +181,7 @@ router.post('/request', authenticateToken, async (req: any, res) => {
         );
 
         if (existingOutgoingRequest) {
-            throw new ApiError(400, 'Buddy request already sent');
+            return res.status(400).json({ error: 'Buddy request already sent' });
         }
 
         // Check if there's a pending request from recipient to sender
@@ -191,7 +193,7 @@ router.post('/request', authenticateToken, async (req: any, res) => {
         );
 
         if (existingIncomingRequest) {
-            throw new ApiError(400, 'This user has already sent you a buddy request');
+            return res.status(400).json({ error: 'This user has already sent you a buddy request' });
         }
 
         // If all checks pass, add the notification
@@ -208,11 +210,8 @@ router.post('/request', authenticateToken, async (req: any, res) => {
 
         res.json({ message: 'Buddy request sent successfully' });
     } catch (error) {
-        if (error instanceof ApiError) {
-            res.status(error.statusCode).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Failed to send buddy request' });
-        }
+        console.error('Send buddy request error:', error);
+        res.status(500).json({ error: 'Failed to send buddy request' });
     }
 });
 
