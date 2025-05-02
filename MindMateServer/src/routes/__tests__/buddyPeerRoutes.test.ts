@@ -396,46 +396,63 @@ describe('Buddy Peer Routes', () => {
     });
     
     it('should return 400 if already buddy peers', async () => {
-      const requestData = {
-        username: 'buddy'
-      };
-      
-      const recipientId = new Types.ObjectId();
-      
-      // Mock sender with recipient already as buddy
-      const sender = {
-        _id: userId,
-        buddyPeers: [
-          {
-            userId: recipientId,
-            relationship: 'friend',
-            dateAdded: new Date()
+        const requestData = {
+          username: 'buddy'
+        };
+        
+        const recipientId = new Types.ObjectId();
+        
+        // Create mock user with buddy already in their list
+        const mockUserWithBuddy = {
+          _id: userId,
+          username: 'testuser',
+          profile: {
+            name: 'Test User',
+            isVerifiedProfessional: false
+          },
+          buddyPeers: [
+            {
+              userId: recipientId,
+              relationship: 'friend',
+              dateAdded: new Date()
+            }
+          ],
+          notifications: []
+        };
+        
+        // Mock recipient
+        const recipient = {
+          _id: recipientId,
+          username: 'buddy',
+          notifications: []
+        };
+        
+        // IMPORTANT: Mock the auth middleware behavior first
+        // This resets all previous mocks
+        jest.clearAllMocks();
+        
+        // Mock auth.verifyToken to return the user ID
+        (auth.verifyToken as jest.Mock).mockReturnValue({ userId });
+        
+        // Mock User.findById for the auth middleware
+        (User.findById as jest.Mock).mockImplementation((id) => {
+          if (id.toString() === userId.toString()) {
+            return Promise.resolve(mockUserWithBuddy);
           }
-        ],
-        notifications: []
-      };
-      
-      // Mock recipient
-      const recipient = {
-        _id: recipientId,
-        username: 'buddy',
-        notifications: []
-      };
-      
-      // Mock User.findById for sender
-      (User.findById as jest.Mock).mockResolvedValueOnce(sender);
-      
-      // Mock User.findOne for recipient
-      (User.findOne as jest.Mock).mockResolvedValueOnce(recipient);
-      
-      const response = await request(app)
-        .post('/api/buddy-peer/request')
-        .set('Authorization', 'Bearer valid-token')
-        .send(requestData);
-      
-      expect(response.status).toBe(400);
-      expect(response.body).toHaveProperty('error', 'You are already buddy peers with this user');
-    });
+          return Promise.resolve(null);
+        });
+        
+        // Mock User.findOne for the recipient lookup
+        (User.findOne as jest.Mock).mockResolvedValue(recipient);
+        
+        const response = await request(app)
+          .post('/api/buddy-peer/request')
+          .set('Authorization', 'Bearer valid-token')
+          .send(requestData);
+        
+        expect(response.status).toBe(400);
+        expect(response.body).toHaveProperty('error', 'You are already buddy peers with this user');
+      });
     
     it('should return 400 if request already sent', async () => {
       const requestData = {

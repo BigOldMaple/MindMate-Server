@@ -161,17 +161,11 @@ router.post('/request', authenticateToken, async (req: any, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // More robust ObjectID comparison for test environments
-        const isAlreadyBuddy = sender.buddyPeers.some((buddy: BuddyPeer) => {
-            // Get string representation of both IDs, handling various formats
-            const buddyUserId = buddy.userId ?
-                (buddy.userId.toString ? buddy.userId.toString() : String(buddy.userId)) : '';
-
-            const recipientId = recipient._id ?
-                (recipient._id.toString ? recipient._id.toString() : String(recipient._id)) : '';
-
-            return buddyUserId === recipientId;
-        });
+        // Improved check for existing buddy peer relationship
+        // Convert both IDs to strings for reliable comparison
+        const isAlreadyBuddy = sender.buddyPeers.some((buddy: BuddyPeer) =>
+            String(buddy.userId) === String(recipient._id)
+        );
 
         if (isAlreadyBuddy) {
             return res.status(400).json({
