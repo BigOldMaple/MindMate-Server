@@ -4,7 +4,6 @@ import { auth } from '../../services/auth';
 import buddyPeerRoutes from '../../routes/buddyPeer';
 import { User } from '../../Database/Schema';
 import { Types } from 'mongoose';
-import { ApiError } from '../../middleware/error';
 
 // Mock dependencies
 jest.mock('../../services/auth');

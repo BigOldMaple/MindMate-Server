@@ -5,7 +5,6 @@ import communityRoutes from '../../routes/community';
 import { Community } from '../../Database/CommunitySchema';
 import { User } from '../../Database/Schema';
 import { Types } from 'mongoose';
-import { ApiError } from '../../middleware/error';
 
 // Mock dependencies
 jest.mock('../../services/auth');
