@@ -19,6 +19,7 @@ interface WebSocketMessage {
 class WebSocketServer {
   private wss: WebSocket.Server;
   private clients: Map<string, AuthenticatedWebSocket> = new Map();
+  private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(server: Server) {
     this.wss = new WebSocket.Server({ server });
@@ -263,7 +264,9 @@ class WebSocketServer {
   }
 
   private startHeartbeat(): void {
-    const interval = setInterval(() => {
+    this.stopHeartbeat(); // Clear any existing interval first
+    
+    this.heartbeatInterval = setInterval(() => {
       this.wss.clients.forEach((ws: AuthenticatedWebSocket) => {
         if (ws.isAlive === false) {
           if (ws.userId) {
@@ -272,22 +275,47 @@ class WebSocketServer {
           ws.terminate();
           return;
         }
-
         ws.isAlive = false;
         ws.ping();
       });
     }, 30000);
-
+    
+    // Prevent the interval from keeping the Node.js process alive
+    this.heartbeatInterval.unref();
+    
     this.wss.on('close', () => {
-      clearInterval(interval);
+      this.stopHeartbeat();
     });
+  }
+  
+  // Add a method to stop the heartbeat
+  public stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
   }
 
   public getClients(): Map<string, AuthenticatedWebSocket> {
     return this.clients;
   }
 
+  // Enhance the close method to clean up resources
   public close(callback?: () => void): void {
+    // Stop the heartbeat
+    this.stopHeartbeat();
+    
+    // Terminate all client connections
+    this.clients.forEach((ws) => {
+      try {
+        ws.terminate();
+      } catch (e) {
+        // Ignore errors during shutdown
+      }
+    });
+    this.clients.clear();
+    
+    // Close the WebSocket server
     this.wss.close(callback);
   }
 }

@@ -819,6 +819,15 @@ class PeerSupportService {
       return [];
     }
   }
+  /**
+ * Clear all scheduled escalations (for testing purposes)
+ */
+  public clearAllTimeouts(): void {
+    this.supportTimeouts.forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    this.supportTimeouts.clear();
+  }
 }
 
 // Export singleton instance
