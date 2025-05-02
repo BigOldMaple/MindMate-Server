@@ -96,8 +96,8 @@ router.get('/requests', authenticateToken, async (req: any, res) => {
         }
 
         const pendingRequests = user.notifications
-            .filter((notif: Notification) => 
-                notif.type === 'buddy_request' && 
+            .filter((notif: Notification) =>
+                notif.type === 'buddy_request' &&
                 notif.status === 'pending'
             )
             .map((request: any) => ({
@@ -132,8 +132,8 @@ router.get('/search', authenticateToken, async (req: any, res) => {
             username: new RegExp(query as string, 'i'),
             _id: { $ne: req.user._id }
         })
-        .select('username profile.name')
-        .limit(10);
+            .select('username profile.name')
+            .limit(10);
 
         const results = users.map(user => ({
             id: user._id.toString(),
@@ -161,10 +161,17 @@ router.post('/request', authenticateToken, async (req: any, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Check if they are already buddy peers - use early return pattern
-        const isAlreadyBuddy = sender.buddyPeers.some(
-            (buddy: BuddyPeer) => buddy.userId.toString() === recipient._id.toString()
-        );
+        // More robust ObjectID comparison for test environments
+        const isAlreadyBuddy = sender.buddyPeers.some((buddy: BuddyPeer) => {
+            // Get string representation of both IDs, handling various formats
+            const buddyUserId = buddy.userId ?
+                (buddy.userId.toString ? buddy.userId.toString() : String(buddy.userId)) : '';
+
+            const recipientId = recipient._id ?
+                (recipient._id.toString ? recipient._id.toString() : String(recipient._id)) : '';
+
+            return buddyUserId === recipientId;
+        });
 
         if (isAlreadyBuddy) {
             return res.status(400).json({
@@ -172,11 +179,12 @@ router.post('/request', authenticateToken, async (req: any, res) => {
             });
         }
 
+
         // Check if there's a pending request from sender to recipient
         const existingOutgoingRequest = recipient.notifications?.find(
-            (notification: Notification) => 
-                notification.type === 'buddy_request' && 
-                notification.senderId.toString() === req.user._id.toString() && 
+            (notification: Notification) =>
+                notification.type === 'buddy_request' &&
+                notification.senderId.toString() === req.user._id.toString() &&
                 notification.status === 'pending'
         );
 
@@ -186,9 +194,9 @@ router.post('/request', authenticateToken, async (req: any, res) => {
 
         // Check if there's a pending request from recipient to sender
         const existingIncomingRequest = sender.notifications?.find(
-            (notification: Notification) => 
-                notification.type === 'buddy_request' && 
-                notification.senderId.toString() === recipient._id.toString() && 
+            (notification: Notification) =>
+                notification.type === 'buddy_request' &&
+                notification.senderId.toString() === recipient._id.toString() &&
                 notification.status === 'pending'
         );
 
@@ -295,7 +303,7 @@ router.delete('/:userId', authenticateToken, async (req: any, res) => {
 router.get('/:userId/profile', authenticateToken, async (req: any, res) => {
     try {
         const { userId } = req.params;
-        
+
         // Find the buddy in the user's buddy peers list
         const user = await User.findById(req.user._id)
             .populate('buddyPeers.userId', 'username profile.name profile.isVerifiedProfessional profile.organizationAffiliation profile.joinDate');
