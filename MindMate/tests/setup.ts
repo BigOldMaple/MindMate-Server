@@ -1,5 +1,7 @@
-// tests/setup.ts
+// tests/setup.ts - with fixed TypeScript errors
 import '@testing-library/jest-native/extend-expect';
+import React from 'react';
+import { StyleProp, ViewStyle, TextStyle, GestureResponderEvent } from 'react-native';
 
 // Mock implementations
 const mockSecureStore = {
@@ -32,8 +34,10 @@ beforeAll(() => {
 
   // Mock Themed components
   jest.mock('@/components/Themed', () => ({
-    View: ({ children, style }) => ({ children, style }),
-    Text: ({ children, style }) => ({ children, style }),
+    View: ({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) => 
+      ({ children, style }),
+    Text: ({ children, style }: { children: React.ReactNode; style?: StyleProp<TextStyle> }) => 
+      ({ children, style }),
   }));
 
   // Mock SecureStore
@@ -55,11 +59,12 @@ beforeAll(() => {
       back: jest.fn()
     }),
     useLocalSearchParams: jest.fn(() => ({})),
-    Link: ({ href, children }) => ({ href, children }),
+    Link: ({ href, children }: { href: string; children: React.ReactNode }) => 
+      ({ href, children }),
     Stack: {
-      Screen: (props) => props,
+      Screen: (props: Record<string, unknown>) => props,
     },
-    Tabs: (props) => props,
+    Tabs: (props: Record<string, unknown>) => props,
   }));
   
   // Mock ActivityIndicator and other RN components
@@ -73,7 +78,15 @@ beforeAll(() => {
         alert: jest.fn(),
       },
       Switch: 'Switch',
-      Pressable: ({ onPress, style, children }) => ({
+      Pressable: ({ 
+        onPress, 
+        style, 
+        children 
+      }: { 
+        onPress?: (event: GestureResponderEvent) => void; 
+        style?: StyleProp<ViewStyle>; 
+        children: React.ReactNode 
+      }) => ({
         onPress,
         style,
         children,

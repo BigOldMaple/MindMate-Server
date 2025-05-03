@@ -8,16 +8,16 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
 jest.mock('../../../services/auth', () => ({
-  auth: {
-    register: jest.fn()
-  },
-  AuthError: class AuthError extends Error {
-    constructor(message) {
-      super(message);
-      this.name = 'AuthError';
+    auth: {
+      register: jest.fn()
+    },
+    AuthError: class AuthError extends Error {
+      constructor(message: string) {
+        super(message);
+        this.name = 'AuthError';
+      }
     }
-  }
-}));
+  }));
 
 describe('SignupScreen', () => {
   const mockRouter = { replace: jest.fn(), push: jest.fn() };
