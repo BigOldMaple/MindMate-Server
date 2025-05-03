@@ -4,7 +4,7 @@ module.exports = {
       'node_modules/(?!(jest-)?react-native|@react-native|react-clone-referenced-element|@react-navigation|expo(nent)?|@expo|expo-router|@unimodules|unimodules|@sentry/react-native|native-base|react-native-svg|@testing-library)'
     ],
     moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-    setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+    setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
     moduleNameMapper: {
       '\\.(jpg|jpeg|png|gif|webp|svg)$': '<rootDir>/__mocks__/fileMock.js',
       '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
