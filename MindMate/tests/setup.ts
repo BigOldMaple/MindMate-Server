@@ -1,29 +1,4 @@
-// tests/setup.ts - revised with better module mocks
 import '@testing-library/jest-native/extend-expect';
-import React from 'react';
-import { StyleProp, ViewStyle, TextStyle, GestureResponderEvent } from 'react-native';
-
-// Mock Expo module dependencies first (before any imports can use them)
-jest.mock('expo-modules-core', () => ({
-  EventEmitter: {
-    setMaxListeners: jest.fn(),
-    addListener: jest.fn(),
-    removeAllListeners: jest.fn(),
-  },
-  NativeModulesProxy: {},
-}), { virtual: true });
-
-jest.mock('expo-asset', () => ({
-  Asset: {
-    fromModule: jest.fn(() => ({ downloadAsync: jest.fn() })),
-    loadAsync: jest.fn(),
-  },
-}), { virtual: true });
-
-jest.mock('expo', () => ({
-  registerRootComponent: jest.fn(),
-  AppState: { addEventListener: jest.fn() },
-}), { virtual: true });
 
 // Mock implementations
 const mockSecureStore = {
@@ -48,80 +23,27 @@ const mockSecureStore = {
 
 // Setup global mocks
 beforeAll(() => {
-  // Mock Expo vector icons
-  jest.mock('@expo/vector-icons/FontAwesome', () => 'FontAwesome');
-  jest.mock('@expo/vector-icons', () => ({
-    FontAwesome: 'FontAwesome',
-  }));
-
-  // Mock Themed components
-  jest.mock('@/components/Themed', () => ({
-    View: ({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) => 
-      React.createElement('View', { style }, children),
-    Text: ({ children, style }: { children: React.ReactNode; style?: StyleProp<TextStyle> }) => 
-      React.createElement('Text', { style }, children),
-  }));
-
   // Mock SecureStore
   jest.mock('expo-secure-store', () => mockSecureStore);
   
   // Mock fetch
   global.fetch = jest.fn();
   
-  // Mock expo-router BEFORE it's imported by any tests
+  // Mock expo-router
   jest.mock('expo-router', () => ({
     router: {
       push: jest.fn(),
       replace: jest.fn(),
-      back: jest.fn(),
+      back: jest.fn()
     },
-    useRouter: jest.fn(() => ({
+    useRouter: () => ({
       push: jest.fn(),
       replace: jest.fn(),
-      back: jest.fn(),
-    })),
+      back: jest.fn()
+    }),
     useLocalSearchParams: jest.fn(() => ({})),
-    useSegments: jest.fn(() => []),
-    Link: ({ href, children }: { href: string; children: React.ReactNode }) => 
-      React.createElement('Link', { href }, children),
-    Stack: {
-      Screen: (props: Record<string, unknown>) => 
-        React.createElement('Screen', props),
-    },
-    Tabs: (props: Record<string, unknown>) => 
-      React.createElement('Tabs', props),
+    Link: 'Link'
   }));
-  
-  // Mock ActivityIndicator and other RN components
-  jest.mock('react-native', () => {
-    const RN = jest.requireActual('react-native');
-    return {
-      ...RN,
-      ActivityIndicator: function MockActivityIndicator(props: any) { 
-        return React.createElement('ActivityIndicator', props);
-      },
-      Alert: {
-        ...RN.Alert,
-        alert: jest.fn(),
-      },
-      Switch: function MockSwitch(props: any) { 
-        return React.createElement('Switch', props);
-      },
-      Pressable: function MockPressable({ 
-        onPress, 
-        style, 
-        children,
-        disabled,
-        testID,
-      }: any) {
-        return React.createElement(
-          'Pressable', 
-          { onPress, style, disabled, testID, props: { disabled } }, 
-          children
-        );
-      },
-    };
-  });
   
   // Silence the warning: Animated: `useNativeDriver` is not supported
   jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');

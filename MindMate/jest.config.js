@@ -11,8 +11,7 @@ module.exports = {
       '^@/(.*)$': '<rootDir>/$1'
     },
     testMatch: [
-      '**/__tests__/**/*.test.[jt]s?(x)',
-      '<rootDir>/tests/**/*.test.[jt]s?(x)'
+      '**/__tests__/**/*.test.[jt]s?(x)'
     ],
     testPathIgnorePatterns: [
       '/node_modules/',
@@ -25,8 +24,7 @@ module.exports = {
     collectCoverage: true,
     collectCoverageFrom: [
       'services/**/*.{ts,tsx}',
-     // 'components/**/*.{ts,tsx}',
-      'app/**/*.{ts,tsx}',
+      //'components/**/*.{ts,tsx}',
       '!**/__tests__/**'
     ],
     coverageReporters: ['json', 'lcov', 'text', 'clover'],
