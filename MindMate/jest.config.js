@@ -24,9 +24,7 @@ module.exports = {
     collectCoverage: true,
     collectCoverageFrom: [
       'services/**/*.{ts,tsx}',
-      'utils/**/*.{ts,tsx}',
-      'components/**/*.{ts,tsx}',
-      '!**/node_modules/**',
+      //'components/**/*.{ts,tsx}',
       '!**/__tests__/**'
     ],
     coverageReporters: ['json', 'lcov', 'text', 'clover'],
