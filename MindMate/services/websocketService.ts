@@ -348,16 +348,25 @@ class WebSocketService extends EventEmitter {
   }
 
   isSocketConnected(): boolean {
+    // Debug logging can be kept if needed
+    // console.log('Debug - WebSocket exists:', !!this.ws);
+    // if (this.ws) {
+    //   console.log('Debug - WebSocket readyState:', this.ws.readyState);
+    // }
+    // console.log('Debug - isConnected flag:', this.isConnected);
+
+    // The actual implementation should return a boolean, not a string
     return this.isConnected && this.ws?.readyState === WebSocket.OPEN;
   }
 
+  // The getConnectionState method should remain separate and return strings:
   getConnectionState(): string {
-    // For debugging purposes, log actual values
-    console.log('Debug - WebSocket exists:', !!this.ws);
-    if (this.ws) {
-      console.log('Debug - WebSocket readyState:', this.ws.readyState);
-    }
-    console.log('Debug - isConnected flag:', this.isConnected);
+    // Debug logging can be kept if needed
+    // console.log('Debug - WebSocket exists:', !!this.ws);
+    // if (this.ws) {
+    //   console.log('Debug - WebSocket readyState:', this.ws.readyState);
+    // }
+    // console.log('Debug - isConnected flag:', this.isConnected);
 
     // Simplified logic for testing
     if (!this.ws) {
