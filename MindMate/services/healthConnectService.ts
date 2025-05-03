@@ -842,8 +842,9 @@ export const formatExerciseDuration = (durationInMillis: number): string => {
 
 // Get time range for last day (24 hours)
 export const getTimeRangeForLastDay = (): { startTime: string, endTime: string } => {
-  const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const now = Date.now();
+  const endTime = new Date(now).toISOString();
+  const startTime = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   return { startTime, endTime };
 };
 
