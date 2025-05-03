@@ -1,3 +1,4 @@
+// tests/setup.ts
 import '@testing-library/jest-native/extend-expect';
 
 // Mock implementations
@@ -23,6 +24,18 @@ const mockSecureStore = {
 
 // Setup global mocks
 beforeAll(() => {
+  // Mock Expo vector icons
+  jest.mock('@expo/vector-icons/FontAwesome', () => 'FontAwesome');
+  jest.mock('@expo/vector-icons', () => ({
+    FontAwesome: 'FontAwesome',
+  }));
+
+  // Mock Themed components
+  jest.mock('@/components/Themed', () => ({
+    View: ({ children, style }) => ({ children, style }),
+    Text: ({ children, style }) => ({ children, style }),
+  }));
+
   // Mock SecureStore
   jest.mock('expo-secure-store', () => mockSecureStore);
   
@@ -42,8 +55,31 @@ beforeAll(() => {
       back: jest.fn()
     }),
     useLocalSearchParams: jest.fn(() => ({})),
-    Link: 'Link'
+    Link: ({ href, children }) => ({ href, children }),
+    Stack: {
+      Screen: (props) => props,
+    },
+    Tabs: (props) => props,
   }));
+  
+  // Mock ActivityIndicator and other RN components
+  jest.mock('react-native', () => {
+    const RN = jest.requireActual('react-native');
+    return {
+      ...RN,
+      ActivityIndicator: 'ActivityIndicator',
+      Alert: {
+        ...RN.Alert,
+        alert: jest.fn(),
+      },
+      Switch: 'Switch',
+      Pressable: ({ onPress, style, children }) => ({
+        onPress,
+        style,
+        children,
+      }),
+    };
+  });
   
   // Silence the warning: Animated: `useNativeDriver` is not supported
   jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
