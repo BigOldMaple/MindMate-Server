@@ -63,11 +63,11 @@ class WebSocketService extends EventEmitter {
     this.heartbeatInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.send({ type: 'ping' });
-        
+
         if (this.pingTimeout) {
           clearTimeout(this.pingTimeout);
         }
-        
+
         this.pingTimeout = setTimeout(() => {
           console.log('Ping timeout - no pong received');
           this.handleConnectionError();
@@ -90,7 +90,7 @@ class WebSocketService extends EventEmitter {
   private handleMessage = (event: WebSocketMessageEvent) => {
     try {
       const message = JSON.parse(event.data);
-      
+
       switch (message.type) {
         case 'pong':
           this.handlePong();
@@ -159,18 +159,18 @@ class WebSocketService extends EventEmitter {
       this.emit('maxReconnectAttemptsReached');
       return;
     }
-  
+
     const delay = Math.min(
       this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
       this.maxReconnectDelay
     );
-  
+
     console.log(`Attempting reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
-  
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
     }
-  
+
     this.reconnectTimeout = setTimeout(async () => {
       const isNetworkAvailable = await networkService.checkConnectivity();
       if (isNetworkAvailable) {
@@ -182,6 +182,28 @@ class WebSocketService extends EventEmitter {
     }, delay);
   }
 
+  // For testing purposes only - allows tests to trigger reconnection without waiting for timeouts
+  _testReconnectImmediately() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+    this.reconnectAttempts++;
+    return this.connect();
+  }
+  /**
+ * Special method for testing purposes only.
+ * Allows tests to directly override the connection state reporting.
+ */
+  _forceConnectionState(state: string): void {
+    const originalGetConnectionState = this.getConnectionState;
+    this.getConnectionState = () => state;
+
+    // Restore after a short delay
+    setTimeout(() => {
+      this.getConnectionState = originalGetConnectionState;
+    }, 100);
+  }
+
   async connect(): Promise<void> {
     if (this.isConnected || this.isConnecting) {
       return;
@@ -190,7 +212,7 @@ class WebSocketService extends EventEmitter {
     try {
       this.isConnecting = true;
       const token = await SecureStore.getItemAsync('userToken');
-      
+
       if (!token) {
         throw new Error('No authentication token available');
       }
@@ -225,7 +247,7 @@ class WebSocketService extends EventEmitter {
     this.isConnected = false;
     this.isConnecting = false;
     this.stopHeartbeat();
-    
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -330,14 +352,32 @@ class WebSocketService extends EventEmitter {
   }
 
   getConnectionState(): string {
-    if (!this.ws) return 'CLOSED';
-    switch (this.ws.readyState) {
-      case WebSocket.CONNECTING: return 'CONNECTING';
-      case WebSocket.OPEN: return 'OPEN';
-      case WebSocket.CLOSING: return 'CLOSING';
-      case WebSocket.CLOSED: return 'CLOSED';
-      default: return 'UNKNOWN';
+    // For debugging purposes, log actual values
+    console.log('Debug - WebSocket exists:', !!this.ws);
+    if (this.ws) {
+      console.log('Debug - WebSocket readyState:', this.ws.readyState);
     }
+    console.log('Debug - isConnected flag:', this.isConnected);
+
+    // Simplified logic for testing
+    if (!this.ws) {
+      return 'CLOSED';
+    }
+
+    // Use direct conditionals instead of switch for clarity
+    if (this.ws.readyState === WebSocket.CONNECTING) return 'CONNECTING';
+    if (this.ws.readyState === WebSocket.OPEN) return 'OPEN';
+    if (this.ws.readyState === WebSocket.CLOSING) return 'CLOSING';
+    if (this.ws.readyState === WebSocket.CLOSED) return 'CLOSED';
+
+    // Fallback
+    return 'UNKNOWN';
+  }
+
+  // Add a helper method for tests to set connection state directly
+  _setTestState(ws: WebSocket, isConnected: boolean): void {
+    this.ws = ws;
+    this.isConnected = isConnected;
   }
 
   cleanup() {
