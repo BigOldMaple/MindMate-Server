@@ -1,3 +1,4 @@
+// jest.config.js
 module.exports = {
   preset: "jest-expo",
   transformIgnorePatterns: [
@@ -9,6 +10,7 @@ module.exports = {
     "\\.(jpg|jpeg|png|gif|webp|svg)$": "<rootDir>/__mocks__/fileMock.js",
     "\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/(.*)$": "<rootDir>/$1",
+    "^@/app/(.*)$": "<rootDir>/app/$1",
     "@expo/vector-icons/(.*)": "<rootDir>/__mocks__/@expo/vector-icons/$1",
     "@expo/vector-icons": "<rootDir>/__mocks__/@expo/vector-icons"
   },
