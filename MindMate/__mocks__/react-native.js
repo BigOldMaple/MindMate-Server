@@ -1,18 +1,6 @@
-// __mocks__/react-native.js
-const React = require('react');
-
-// Basic string-based native components
-const View = 'View';
-const Text = 'Text';
-const TextInput = 'TextInput';
-const Pressable = 'Pressable';
-
-// Export basic components
+// __mocks__/react-native.js - Simplified version
 module.exports = {
-  View, 
-  Text,
-  TextInput,
-  Pressable,
-  Alert: { alert: jest.fn() },
-  StyleSheet: { create: styles => styles }
-};
+    Alert: { alert: jest.fn() },
+    Platform: { OS: 'ios', select: jest.fn(obj => obj.ios || obj.default) },
+    StyleSheet: { create: styles => styles }
+  };
