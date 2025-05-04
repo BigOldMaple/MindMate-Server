@@ -1,7 +1,4 @@
-// services/__tests__/healthConnectService.test.ts
-
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 
 // Mock dependencies
 jest.mock('react-native-health-connect', () => ({
