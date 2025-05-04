@@ -849,23 +849,23 @@ export const getTimeRangeForLastDay = (): { startTime: string, endTime: string }
 };
 
 // Get time range for last week (7 days)
-export const getTimeRangeForLastWeek = (): { startTime: string, endTime: string } => {
-  const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+export const getTimeRangeForLastWeek = (now = Date.now()): { startTime: string, endTime: string } => {
+  const endTime = new Date(now).toISOString();
+  const startTime = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   return { startTime, endTime };
 };
 
 // Get time range for last month (30 days)
-export const getTimeRangeForLastMonth = (): { startTime: string, endTime: string } => {
-  const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+export const getTimeRangeForLastMonth = (now = Date.now()): { startTime: string, endTime: string } => {
+  const endTime = new Date(now).toISOString();
+  const startTime = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
   return { startTime, endTime };
 };
 
 // Get time range for last year (365 days)
-export const getTimeRangeForLastYear = (): { startTime: string, endTime: string } => {
-  const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+export const getTimeRangeForLastYear = (now = Date.now()): { startTime: string, endTime: string } => {
+  const endTime = new Date(now).toISOString();
+  const startTime = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString();
   return { startTime, endTime };
 };
 
