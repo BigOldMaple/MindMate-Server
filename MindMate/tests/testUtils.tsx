@@ -1,18 +1,20 @@
 // tests/testUtils.tsx
 import React from 'react';
 import { render as rtlRender } from '@testing-library/react-native';
+import { AuthProvider } from '@/contexts/AuthContext';
 
-// Mock auth value
-const mockUser = {
-  id: 'test-user-id',
-  name: 'Test User',
-  email: 'test@example.com',
-  username: 'testuser'
+// Create a wrapper component to provide all necessary context
+const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <AuthProvider>
+      {children}
+    </AuthProvider>
+  );
 };
 
-// Create a custom render function
+// Create a custom render function with the wrapper
 const render = (ui: React.ReactElement, options = {}) => {
-  return rtlRender(ui, options);
+  return rtlRender(ui, { wrapper: AllTheProviders, ...options });
 };
 
 // Re-export everything

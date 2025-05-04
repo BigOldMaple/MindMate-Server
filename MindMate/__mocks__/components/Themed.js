@@ -2,17 +2,16 @@
 const React = require('react');
 const { View: RNView, Text: RNText } = require('react-native');
 
-// The View component
-const View = React.forwardRef((props, ref) => {
-  return React.createElement(RNView, {...props, ref});
-});
-View.displayName = 'ThemedView';
+const View = (props) => {
+  return React.createElement(RNView, props, props.children);
+};
 
-// The Text component
-const Text = React.forwardRef((props, ref) => {
-  return React.createElement(RNText, {...props, ref});
-});
-Text.displayName = 'ThemedText';
+const Text = (props) => {
+  return React.createElement(RNText, props, props.children);
+};
+
+View.displayName = 'Themed.View';
+Text.displayName = 'Themed.Text';
 
 module.exports = {
   View,
