@@ -9,6 +9,8 @@ module.exports = {
     "\\.(jpg|jpeg|png|gif|webp|svg)$": "<rootDir>/__mocks__/fileMock.js",
     "\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/(.*)$": "<rootDir>/$1",
+    "@expo/vector-icons/(.*)": "<rootDir>/__mocks__/@expo/vector-icons/$1",
+    "@expo/vector-icons": "<rootDir>/__mocks__/@expo/vector-icons"
   },
   testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"],
   testPathIgnorePatterns: ["/node_modules/", "/android/", "/ios/"],
@@ -22,5 +24,5 @@ module.exports = {
     "!**/__tests__/**",
   ],
   coverageReporters: ["json", "lcov", "text", "clover"],
-  testEnvironment: "node",
+  testEnvironment: "jsdom",
 };

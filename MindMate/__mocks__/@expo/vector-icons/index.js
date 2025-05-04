@@ -1,0 +1,3 @@
+module.exports = {
+    FontAwesome: 'FontAwesomeMock',
+  };
