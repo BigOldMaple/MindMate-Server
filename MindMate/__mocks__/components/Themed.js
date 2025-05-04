@@ -10,9 +10,6 @@ const Text = (props) => {
   return React.createElement(RNText, props, props.children);
 };
 
-View.displayName = 'Themed.View';
-Text.displayName = 'Themed.Text';
-
 module.exports = {
   View,
   Text,

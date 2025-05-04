@@ -3,7 +3,7 @@ import React from 'react';
 import { Alert, View, Text, TextInput, Pressable } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-// Mock services first
+// Mock auth service
 jest.mock('@/services/auth', () => ({
   auth: {
     login: jest.fn().mockResolvedValue({
@@ -22,8 +22,8 @@ jest.mock('@/services/auth', () => ({
 // Import auth after mocking
 import { auth } from '@/services/auth';
 
-// Create a simple component for testing that captures the core functionality
-const TestLoginScreen = () => {
+// Create a simplified test component that captures core functionality
+const LoginTestComponent = () => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   
@@ -68,7 +68,7 @@ describe('Login Functionality', () => {
   });
 
   it('renders login form correctly', () => {
-    const { getByPlaceholderText, getByText } = render(<TestLoginScreen />);
+    const { getByPlaceholderText, getByText } = render(<LoginTestComponent />);
     
     expect(getByPlaceholderText('Email')).toBeTruthy();
     expect(getByPlaceholderText('Password')).toBeTruthy();
@@ -77,7 +77,7 @@ describe('Login Functionality', () => {
 
   it('shows validation error when fields are empty', () => {
     const alertSpy = jest.spyOn(Alert, 'alert');
-    const { getByText } = render(<TestLoginScreen />);
+    const { getByText } = render(<LoginTestComponent />);
     
     // Click login without filling fields
     fireEvent.press(getByText('Log In'));
@@ -89,7 +89,7 @@ describe('Login Functionality', () => {
   });
 
   it('calls auth.login with correct credentials', async () => {
-    const { getByPlaceholderText, getByText } = render(<TestLoginScreen />);
+    const { getByPlaceholderText, getByText } = render(<LoginTestComponent />);
     
     // Fill the form
     fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');

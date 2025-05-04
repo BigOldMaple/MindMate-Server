@@ -16,7 +16,9 @@ module.exports = {
     "@/components/Themed": "<rootDir>/__mocks__/components/Themed.js",
     "@/contexts/AuthContext": "<rootDir>/__mocks__/contexts/AuthContext.js",
     "@/services/auth": "<rootDir>/__mocks__/services/auth.js",
-    "expo-router": "<rootDir>/__mocks__/expo-router.js"
+    "expo-router": "<rootDir>/__mocks__/expo-router.js",
+    // Add direct mapping for react-native
+    "^react-native$": "<rootDir>/__mocks__/react-native.js"
   },
   testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"],
   testPathIgnorePatterns: ["/node_modules/", "/android/", "/ios/"],
