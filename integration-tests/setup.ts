@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { startServer } from '../MindMateServer/src/index';
 import supertest from 'supertest';
 import http from 'http';
+import { setApiRequest } from './helpers';
 
 // Variables to hold server and database instances
 let mongoServer: MongoMemoryServer;
@@ -27,6 +28,9 @@ export const setupIntegrationTestEnv = async () => {
   
   // Create supertest instance
   const apiRequest = supertest(expressServer);
+  
+  // Use type assertion to fix type compatibility issue
+  setApiRequest(apiRequest as any);
   
   return { apiRequest, expressServer };
 };
