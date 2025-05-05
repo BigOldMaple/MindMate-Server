@@ -1,0 +1,25 @@
+// integration-tests/tsconfig.json
+{
+    "compilerOptions": {
+      "target": "ES2018",
+      "module": "CommonJS",
+      "esModuleInterop": true,
+      "strict": true,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true,
+      "outDir": "./dist",
+      "rootDir": "..",
+      "baseUrl": "..",
+      "paths": {
+        "@/*": ["MindMate/*"]
+      }
+    },
+    "include": [
+      "./**/*.ts",
+      "../MindMate/services/auth.ts",
+      "../MindMateServer/src/**/*.ts"
+    ],
+    "exclude": [
+      "node_modules"
+    ]
+  }

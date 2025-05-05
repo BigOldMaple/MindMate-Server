@@ -7,7 +7,7 @@ import {
     registerTestUser, 
     loginTestUser, 
     accessProtectedRoute 
-  } from './helpers';
+  } from '../integration-tests/helpers';
   
   let apiRequest: any;
   
