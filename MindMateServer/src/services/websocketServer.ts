@@ -1,9 +1,9 @@
 import { Server } from 'http';
 import WebSocket from 'ws';
-import jwt from 'jsonwebtoken';
 import { User } from '../Database/Schema';
 import { Message, Conversation, IParticipant } from '../Database/ChatSchema';
 import { Types } from 'mongoose';
+import { auth } from '../services/auth';  // Import the auth service
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -39,16 +39,10 @@ class WebSocketServer {
           return;
         }
   
-        // Get the JWT secret consistently with the rest of the application
-        const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
-        
-        // For debugging in test environment only
-        if (process.env.NODE_ENV === 'test') {
-          console.log(`Using JWT_SECRET in websocket: ${jwtSecret.substring(0, 3)}...`);
-        }
-        
         try {
-          const decoded = jwt.verify(token, jwtSecret) as { userId: string };
+          // Use the auth service's verifyToken method directly
+          // This ensures we use the same JWT secret as the auth service
+          const decoded = auth.verifyToken(token);
           
           const user = await User.findById(decoded.userId);
           if (!user) {
