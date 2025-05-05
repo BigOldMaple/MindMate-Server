@@ -180,15 +180,32 @@ import {
     
     // If WebSocket connections fail, this test will be skipped
     it('should connect to WebSocket server with valid token', async () => {
-      // If we got here, the WebSocket connections in beforeEach succeeded
-      if (user1Socket && user2Socket) {
-        expect(user1Socket.readyState).toBe(WebSocket.OPEN);
-        expect(user2Socket.readyState).toBe(WebSocket.OPEN);
-      } else {
-        console.warn('Skipping test - WebSocket connections not established');
-        expect(true).toBe(true); // Always pass
-      }
-    });
+        // Create flags to track if the connections were ever open
+        let user1WasOpen = false;
+        let user2WasOpen = false;
+      
+        // Set up event listeners to track connection status
+        if (user1Socket) {
+          user1WasOpen = user1Socket.readyState === WebSocket.OPEN;
+          user1Socket.addEventListener('open', () => {
+            user1WasOpen = true;
+          });
+        }
+      
+        if (user2Socket) {
+          user2WasOpen = user2Socket.readyState === WebSocket.OPEN;
+          user2Socket.addEventListener('open', () => {
+            user2WasOpen = true;
+          });
+        }
+      
+        // Wait a short time to allow connections to be tracked
+        await new Promise(resolve => setTimeout(resolve, 100));
+      
+        // Now check if the connections were ever opened
+        expect(user1WasOpen || user1Socket?.readyState === WebSocket.OPEN).toBe(true);
+        expect(user2WasOpen || user2Socket?.readyState === WebSocket.OPEN).toBe(true);
+      });
     
     // Add more WebSocket tests conditionally
     // We'll check if the WebSocket connections are open before running each test

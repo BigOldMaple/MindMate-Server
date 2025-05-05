@@ -33,41 +33,66 @@ class WebSocketServer {
       try {
         const url = new URL(request.url || '', 'ws://localhost');
         const token = url.searchParams.get('token');
-
+        
         if (!token) {
           ws.close(1008, 'Token required');
           return;
         }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
-        const user = await User.findById(decoded.userId);
-
-        if (!user) {
-          ws.close(1008, 'User not found');
+  
+        // Get the JWT secret consistently with the rest of the application
+        const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+        
+        // For debugging in test environment only
+        if (process.env.NODE_ENV === 'test') {
+          console.log(`Using JWT_SECRET in websocket: ${jwtSecret.substring(0, 3)}...`);
+        }
+        
+        try {
+          const decoded = jwt.verify(token, jwtSecret) as { userId: string };
+          
+          const user = await User.findById(decoded.userId);
+          if (!user) {
+            ws.close(1008, 'User not found');
+            return;
+          }
+          
+          ws.userId = decoded.userId;
+          ws.username = user.username;
+          ws.isAlive = true;
+          
+          this.clients.set(decoded.userId, ws);
+          
+          console.log(`Client connected: ${user.username} (${decoded.userId})`);
+          
+          ws.on('message', async (rawData) => {
+            try {
+              const data = JSON.parse(rawData.toString());
+              await this.handleMessage(ws, data);
+            } catch (error) {
+              console.error('Error parsing message:', error);
+            }
+          });
+          
+          ws.on('close', () => this.handleClose(ws));
+          ws.on('pong', () => { ws.isAlive = true; });
+          
+        } catch (jwtError) {
+          // Type-safe error handling with proper narrowing
+          const errorMessage = jwtError instanceof Error 
+            ? jwtError.message 
+            : 'Unknown JWT verification error';
+            
+          console.error('JWT verification error:', errorMessage);
+          ws.close(1008, `Authentication failed: ${errorMessage}`);
           return;
         }
-
-        ws.userId = decoded.userId;
-        ws.username = user.username;
-        ws.isAlive = true;
-
-        this.clients.set(decoded.userId, ws);
-
-        console.log(`Client connected: ${user.username} (${decoded.userId})`);
-
-        ws.on('message', async (rawData) => {
-          try {
-            const data = JSON.parse(rawData.toString());
-            await this.handleMessage(ws, data);
-          } catch (error) {
-            console.error('Error parsing message:', error);
-          }
-        });
         
-        ws.on('close', () => this.handleClose(ws));
-        ws.on('pong', () => { ws.isAlive = true; });
-
       } catch (error) {
+        // General error handling
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : 'Unknown connection error';
+        
         console.error('WebSocket connection error:', error);
         ws.close(1008, 'Authentication failed');
       }
