@@ -1,17 +1,25 @@
-// __tests__/login-logic.test.js
+// __tests__/login-logic.test.ts
 import { Alert } from 'react-native';
-import { auth, AuthError } from '@/services/auth';
+import { auth, AuthError, AuthResult } from '@/services/auth';
 
 // Mock dependencies
 jest.mock('@/services/auth', () => ({
   auth: {
     login: jest.fn().mockResolvedValue({
       token: 'test-token',
-      user: { id: 'user-id', name: 'Test User' }
+      user: { 
+        id: 'user-id', 
+        username: 'testuser',
+        email: 'test@example.com',
+        profile: {
+          name: 'Test User',
+          isVerifiedProfessional: false
+        }
+      }
     })
   },
   AuthError: class AuthError extends Error {
-    constructor(message) {
+    constructor(message: string) {
       super(message);
       this.name = 'AuthError';
     }
@@ -36,7 +44,7 @@ describe('Login Logic', () => {
   });
 
   // Helper function to simulate the login logic
-  const performLogin = async (email, password) => {
+  const performLogin = async (email: string, password: string): Promise<boolean> => {
     // Validation logic
     if (!email || !password) {
       Alert.alert('Missing Information', 'Please fill in all fields');
@@ -44,7 +52,7 @@ describe('Login Logic', () => {
     }
     
     try {
-      const response = await auth.login({ email, password });
+      const response: AuthResult = await auth.login({ email, password });
       await mockSignIn(response.token, response.user);
       return true;
     } catch (error) {
@@ -93,11 +101,16 @@ describe('Login Logic', () => {
       password: 'password123'
     });
     expect(result).toBe(true);
-    expect(mockSignIn).toHaveBeenCalledWith('test-token', { id: 'user-id', name: 'Test User' });
+    expect(mockSignIn).toHaveBeenCalledWith('test-token', expect.objectContaining({
+      id: 'user-id',
+      profile: expect.objectContaining({
+        name: 'Test User'
+      })
+    }));
   });
 
   it('handles "Account not found" error', async () => {
-    auth.login.mockRejectedValueOnce(new AuthError('Account not found'));
+    (auth.login as jest.Mock).mockRejectedValueOnce(new AuthError('Account not found'));
     
     const result = await performLogin('nonexistent@example.com', 'password123');
     
@@ -106,7 +119,7 @@ describe('Login Logic', () => {
   });
 
   it('handles "Incorrect password" error', async () => {
-    auth.login.mockRejectedValueOnce(new AuthError('Incorrect password'));
+    (auth.login as jest.Mock).mockRejectedValueOnce(new AuthError('Incorrect password'));
     
     const result = await performLogin('test@example.com', 'wrongpassword');
     
@@ -115,7 +128,7 @@ describe('Login Logic', () => {
   });
 
   it('handles generic auth errors', async () => {
-    auth.login.mockRejectedValueOnce(new AuthError('Unknown error'));
+    (auth.login as jest.Mock).mockRejectedValueOnce(new AuthError('Unknown error'));
     
     const result = await performLogin('test@example.com', 'password123');
     
@@ -124,7 +137,7 @@ describe('Login Logic', () => {
   });
 
   it('handles unexpected errors', async () => {
-    auth.login.mockRejectedValueOnce(new Error('Network error'));
+    (auth.login as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
     
     const result = await performLogin('test@example.com', 'password123');
     
