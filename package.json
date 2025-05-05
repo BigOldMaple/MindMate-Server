@@ -1,0 +1,15 @@
+{
+    "name": "mindmate-integration-tests",
+    "version": "1.0.0",
+    "description": "Integration tests for MindMate",
+    "scripts": {
+      "test": "jest --config=jest.config.js"
+    },
+    "dependencies": {
+      "jest": "^29.7.0",
+      "ts-jest": "^29.1.1",
+      "supertest": "^7.1.0",
+      "mongodb-memory-server": "^10.1.4",
+      "typescript": "^5.3.0"
+    }
+  }
