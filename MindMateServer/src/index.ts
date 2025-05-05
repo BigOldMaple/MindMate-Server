@@ -98,7 +98,7 @@ export function createApp(isTest = false) {
 }
 
 // Function to start server, exportable for testing
-export const startServer = async (isTest = false): Promise<http.Server> => {
+export const startServer = async (isTest = false, enableWebSockets = false): Promise<http.Server> => {
     try {
         // Connect to MongoDB first
         const db = await connectToDatabase();
@@ -111,9 +111,9 @@ export const startServer = async (isTest = false): Promise<http.Server> => {
         const app = createApp(isTest);
         const server = http.createServer(app);
         
-        // Initialize WebSocket server (skip in test mode)
+        // Initialize WebSocket server (skip in test mode unless explicitly enabled)
         let wss: WebSocketServer | undefined;
-        if (!isTest) {
+        if (!isTest || enableWebSockets) {
             wss = new WebSocketServer(server);
         }
         

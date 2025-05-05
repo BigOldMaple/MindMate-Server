@@ -22,7 +22,8 @@ class WebSocketServer {
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(server: Server) {
-    this.wss = new WebSocket.Server({ server });
+    // Specify the path explicitly
+    this.wss = new WebSocket.Server({ server, path: '/ws' });
     this.setupWebSocketServer();
     this.startHeartbeat();
   }

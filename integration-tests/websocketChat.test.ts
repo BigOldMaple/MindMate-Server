@@ -90,13 +90,14 @@ import {
   };
   
   beforeAll(async () => {
-    const setup = await setupIntegrationTestEnv();
+    // Enable WebSockets for this test suite
+    const setup = await setupIntegrationTestEnv(true);
     apiRequest = setup.apiRequest;
-    server = setup.expressServer; // Store server reference
+    server = setup.expressServer;
     
     console.log(`Server address: ${JSON.stringify(server.address())}`);
     console.log(`Using port: ${server.address().port}`);
-  });
+});
   
   afterAll(async () => {
     await teardownIntegrationTestEnv();
