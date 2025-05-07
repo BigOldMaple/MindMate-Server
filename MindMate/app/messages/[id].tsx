@@ -60,7 +60,7 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<number | null>(null);
   const firstLoadRef = useRef(true);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);

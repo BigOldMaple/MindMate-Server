@@ -13,11 +13,11 @@ class WebSocketService extends EventEmitter {
   private baseReconnectDelay = 1000;
   private maxReconnectDelay = 30000;
   private heartbeatInterval: number | null = null;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: number | null = null;
   private messageQueue: string[] = [];
   private isConnected = false;
   private isConnecting = false;
-  private pingTimeout: NodeJS.Timeout | null = null;
+  private pingTimeout: number | null = null;
   private eventHandlers: Map<string, Set<MessageHandler>> = new Map();
 
   private constructor() {

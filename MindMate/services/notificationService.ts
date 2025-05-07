@@ -14,6 +14,8 @@ const DUPLICATE_THRESHOLD_MS = 5000; // 5 seconds threshold
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
@@ -48,6 +50,8 @@ export class NotificationService {
       // Configure notification handler
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
+          shouldShowBanner: true,
+          shouldShowList: true,
           shouldShowAlert: true,
           shouldPlaySound: true,
           shouldSetBadge: true,
