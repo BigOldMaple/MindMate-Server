@@ -12,3 +12,8 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# @generated begin expo-build-properties - expo prebuild (DO NOT MODIFY)
+-keep class com.google.android.healthconnect.** { *; }
+-keep class androidx.health.connect.** { *; }
+# @generated end expo-build-properties

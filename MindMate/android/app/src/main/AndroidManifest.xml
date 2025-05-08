@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -12,75 +11,36 @@
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-  <!-- Health Connect permissions -->
   <uses-permission android:name="android.permission.health.READ_STEPS"/>
   <uses-permission android:name="android.permission.health.WRITE_STEPS"/>
-
-  <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
-  <uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
-
-  <uses-permission android:name="android.permission.health.READ_SLEEP"/>
-  <uses-permission android:name="android.permission.health.WRITE_SLEEP"/>
- 
- <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
- <uses-permission android:name="android.permission.health.WRITE_EXERCISE"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
       <category android:name="android.intent.category.BROWSABLE"/>
       <data android:scheme="https"/>
     </intent>
-    <!-- Add Health Connect package query -->
-    <package android:name="com.google.android.apps.healthdata" />
   </queries>
   <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:requestLegacyExternalStorage="true">
+    <meta-data android:name="androidx.health.connect.PROVIDER" android:value="true"/>
+    <meta-data android:name="androidx.health.connect.client.APP_ID" android:value="com.nikodemmech.MindMate"/>
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="true"/>
     <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-   
-    <!-- ADD THESE TWO METADATA TAGS -->
-    <meta-data android:name="androidx.health.connect.client.APP_ID" android:value="com.nikodemmech.MindMate" />
-    <meta-data android:name="androidx.health.connect.PROVIDER" android:value="true" />
-   
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
       <intent-filter>
+        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
+      </intent-filter>
+      <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="com.nikodemmech.MindMate"/>
         <data android:scheme="exp+mindmate"/>
       </intent-filter>
-     
-      <!-- ADD THIS INTENT FILTER -->
-      <intent-filter>
-        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
-      </intent-filter>
     </activity>
-    
-    <!-- Add this for Android 13 and below permissions rationale -->
-    <activity
-      android:name=".PermissionsRationaleActivity"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-      </intent-filter>
-    </activity>
-    
-    <!-- Add this for Android 14+ permissions rationale -->
-    <activity-alias
-      android:name="ViewPermissionUsageActivity"
-      android:exported="true"
-      android:targetActivity=".MainActivity"
-      android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-      <intent-filter>
-        <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-        <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-      </intent-filter>
-    </activity-alias>
   </application>
 </manifest>

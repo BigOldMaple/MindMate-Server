@@ -15,7 +15,7 @@
       "bundler": "metro"
     },
     "plugins": [
-      // "react-native-health-connect",
+      "react-native-health-connect",
       ["expo-dev-client", {
         "androidDevelopmentClient": false,
         "iosDevelopmentClient": false
