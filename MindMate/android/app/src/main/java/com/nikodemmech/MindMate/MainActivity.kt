@@ -11,9 +11,6 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 import expo.modules.ReactActivityDelegateWrapper
 
-// Add this import for Health Connect
-import dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate
-
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     // Set the theme to AppTheme BEFORE onCreate to support
@@ -24,9 +21,6 @@ class MainActivity : ReactActivity() {
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
-    
-    // Add this line to handle Health Connect permission results
-    HealthConnectPermissionDelegate.setPermissionDelegate(this)
   }
 
   /**

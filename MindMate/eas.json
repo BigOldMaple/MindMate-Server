@@ -19,6 +19,18 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "gradleCommand": ":app:assembleDebug",
+        "buildType": "apk"
+      }
     }
+  },
+  "cli": {
+    "version": ">= 5.9.1",
+    "requireCommit": false
   }
 }
