@@ -3,7 +3,7 @@
     "name": "MindMate",
     "slug": "MindMate",
     "version": "1.0.4",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "jsEngine": "hermes",
     "assetBundlePatterns": [
       "assets/*",
@@ -15,7 +15,11 @@
       "bundler": "metro"
     },
     "plugins": [
-      "react-native-health-connect",
+      // "react-native-health-connect",
+      ["expo-dev-client", {
+        "androidDevelopmentClient": false,
+        "iosDevelopmentClient": false
+      }],
       "./androidManifestPlugin.js",
       [
         "expo-build-properties",
@@ -71,6 +75,9 @@
         "android.permission.health.READ_STEPS",
         "android.permission.health.WRITE_STEPS"
       ]
+    },
+    "developmentClient": {
+      "silentLaunch": true
     }
   }
 }
